@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 640" width="900" height="640" font-family="Segoe UI, Roboto, sans-serif">
+  <rect width="900" height="640" fill="#F6F8FC"/>
+  <defs>
+    <clipPath id="sq"><rect width="108" height="108" rx="24"/></clipPath>
+    <clipPath id="ci"><circle cx="54" cy="54" r="54"/></clipPath>
+    <g id="i1"><rect width="108" height="108" fill="#E76F51"/><g transform="rotate(-12 54 54)"><rect x="30" y="26" width="44" height="52" rx="3" fill="#FCE8DF"/></g><g transform="rotate(8 54 56)"><rect x="33" y="30" width="44" height="52" rx="3" fill="#fff"/><rect x="37" y="34" width="36" height="34" fill="#2A9D8F"/><circle cx="64" cy="42" r="5" fill="#F4D35E"/><path d="M37 68 L49 52 L57 61 L62 55 L73 68 Z" fill="#264653"/></g></g>
+    <g id="i2"><rect width="108" height="108" fill="#0F6E56"/><circle cx="76" cy="34" r="8" fill="#F4D35E"/><path d="M22 78 L42 38 L54 58 L66 38 L86 78 Z" fill="#fff"/><path d="M42 38 L49 52 L44 50 L39 54 L35 52 Z M66 38 L73 52 L68 50 L63 54 L59 52 Z" fill="#9FE1CB"/></g>
+    <g id="i3"><rect width="108" height="108" fill="#185FA5"/><path d="M54 24 L84 50 V84 H24 V50 Z" fill="#fff"/><rect x="36" y="52" width="36" height="24" rx="2" fill="#85B7EB"/><circle cx="64" cy="59" r="3.5" fill="#F4D35E"/><path d="M36 76 L49 61 L57 69 L62 64 L72 76 Z" fill="#0C447C"/></g>
+    <g id="i4"><rect width="108" height="108" fill="#534AB7"/><g fill="#fff"><circle cx="40" cy="60" r="14"/><circle cx="57" cy="50" r="18"/><circle cx="73" cy="61" r="12"/><rect x="28" y="60" width="56" height="15" rx="7.5"/></g><path d="M56 70 C56 70 45 63 45 57 C45 53.5 48 51.5 50.8 52.5 C52.8 53.2 54 55 56 57 C58 55 59.2 53.2 61.2 52.5 C64 51.5 67 53.5 67 57 C67 63 56 70 56 70 Z" fill="#D4537E"/></g>
+    <g id="i5"><rect width="108" height="108" fill="#26215C"/><circle cx="54" cy="54" r="30" fill="#fff"/><path d="M54 54 L78 54 L66 74.8 Z" fill="#E76F51"/><path d="M54 54 L66 74.8 L42 74.8 Z" fill="#EF9F27"/><path d="M54 54 L42 74.8 L30 54 Z" fill="#97C459"/><path d="M54 54 L30 54 L42 33.2 Z" fill="#1D9E75"/><path d="M54 54 L42 33.2 L66 33.2 Z" fill="#378ADD"/><path d="M54 54 L66 33.2 L78 54 Z" fill="#7F77DD"/><circle cx="54" cy="54" r="8" fill="#26215C"/></g>
+    <g id="i6"><rect width="108" height="108" fill="#FAEEDA"/><g fill="none" stroke="#993C1D" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"><path d="M26 40 V26 H40"/><path d="M68 26 H82 V40"/><path d="M82 68 V82 H68"/><path d="M40 82 H26 V68"/></g><text x="54" y="65" text-anchor="middle" font-family="Georgia, serif" font-size="32" fill="#712B13">BK</text></g>
+  </defs>
+  <g font-size="20" fill="#1B1C20" text-anchor="middle">
+    <g transform="translate(40 40)"><g transform="scale(1.6)" clip-path="url(#sq)"><use href="#i1"/></g><g transform="translate(185 40) scale(0.9)" clip-path="url(#ci)"><use href="#i1"/></g><text x="125" y="215">1. Polaroïds</text></g>
+    <g transform="translate(330 40)"><g transform="scale(1.6)" clip-path="url(#sq)"><use href="#i2"/></g><g transform="translate(185 40) scale(0.9)" clip-path="url(#ci)"><use href="#i2"/></g><text x="125" y="215">2. Montagnes M</text></g>
+    <g transform="translate(620 40)"><g transform="scale(1.6)" clip-path="url(#sq)"><use href="#i3"/></g><g transform="translate(185 40) scale(0.9)" clip-path="url(#ci)"><use href="#i3"/></g><text x="125" y="215">3. Maison photo</text></g>
+    <g transform="translate(40 340)"><g transform="scale(1.6)" clip-path="url(#sq)"><use href="#i4"/></g><g transform="translate(185 40) scale(0.9)" clip-path="url(#ci)"><use href="#i4"/></g><text x="125" y="215">4. Nuage cœur</text></g>
+    <g transform="translate(330 340)"><g transform="scale(1.6)" clip-path="url(#sq)"><use href="#i5"/></g><g transform="translate(185 40) scale(0.9)" clip-path="url(#ci)"><use href="#i5"/></g><text x="125" y="215">5. Objectif couleurs</text></g>
+    <g transform="translate(620 340)"><g transform="scale(1.6)" clip-path="url(#sq)"><use href="#i6"/></g><g transform="translate(185 40) scale(0.9)" clip-path="url(#ci)"><use href="#i6"/></g><text x="125" y="215">6. Monogramme BK</text></g>
+  </g>
+</svg>

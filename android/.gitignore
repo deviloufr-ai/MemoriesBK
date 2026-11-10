@@ -1,0 +1,8 @@
+.gradle/
+build/
+local.properties
+.idea/
+
+# clé de signature release : ne jamais publier
+*.jks
+keystore.properties

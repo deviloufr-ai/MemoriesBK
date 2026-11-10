@@ -1,0 +1,313 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Onglets -->
+    <string name="tab_photos">写真</string>
+    <string name="tab_recent">最近</string>
+    <string name="tab_memories">思い出</string>
+    <string name="tab_explore">検索</string>
+    <string name="tab_manage">管理</string>
+
+    <!-- Commun -->
+    <string name="back">戻る</string>
+    <string name="cancel">キャンセル</string>
+    <string name="free_space">空き容量を増やす</string>
+    <string name="free_space_none">削除できるものはありません（バックアップ済みの写真がありません）</string>
+    <string name="free_space_action">スマートフォンから削除</string>
+    <plurals name="free_space_count">
+        <item quantity="other">バックアップ済みの写真と動画 %1$d 件 · %2$s</item>
+    </plurals>
+    <plurals name="free_space_confirm">
+        <item quantity="other">%1$d 件（%2$s）をこのスマートフォンから削除します。サーバーと MemoriesBK には残ります。</item>
+    </plurals>
+    <string name="use_local">自宅のネットワーク</string>
+    <string name="use_local_text">自宅の Wi-Fi ではサーバーに直接接続（高速・制限なし）。外出先ではインターネット経由。</string>
+    <string name="memory_videos">今月のムービー</string>
+    <string name="memory_video_items">写真と動画 %1$d 件</string>
+    <string name="memory_video_empty">写真が足りません</string>
+    <string name="memory_video_error">作成に失敗しました</string>
+    <string name="memory_video_making">作成中…</string>
+    <string name="memory_video_create">作成</string>
+    <string name="memory_video_pick_month">どの月のムービーを作りますか？</string>
+    <string name="face_open">写真を見る</string>
+    <string name="face_not_this">%1$s ではない…</string>
+    <string name="face_remove">この顔を削除</string>
+    <string name="face_who">この人は誰ですか？</string>
+    <string name="face_new_name">新しい人物（名前）</string>
+    <string name="face_assign">決定</string>
+    <string name="exit_confirm_title">MemoriesBK を終了しますか？</string>
+    <string name="exit_confirm">終了</string>
+    <string name="sign_out_confirm_title">ログアウトしますか？</string>
+    <string name="sign_out_confirm_text">再ログインするまで、このスマートフォンの自動バックアップは停止します。写真はサーバーに残ります。</string>
+    <string name="ok">OK</string>
+    <string name="delete">削除</string>
+    <string name="share">共有</string>
+    <string name="add">追加</string>
+    <string name="save">保存</string>
+    <string name="edit">編集</string>
+    <string name="search">検索</string>
+    <string name="clear">クリア</string>
+    <string name="loading">読み込み中…</string>
+    <string name="unnamed">名前なし</string>
+    <string name="add_to_album">アルバムに追加</string>
+    <string name="new_album">新しいアルバム</string>
+    <string name="album_title_label">タイトル</string>
+    <string name="select_all">すべて選択</string>
+    <string name="select_none">選択解除</string>
+    <string name="trash">ゴミ箱</string>
+    <string name="share_failed">共有できませんでした: %1$s</string>
+    <plurals name="item_count">
+        <item quantity="other">%1$d 件</item>
+    </plurals>
+
+    <!-- Messages (snackbar) -->
+    <string name="error_unreachable">サーバーに接続できません</string>
+    <string name="error_unreachable_detail">サーバーに接続できません: %1$s</string>
+    <string name="error_search_starting">サーバーで検索機能を起動中です。1 分後にもう一度お試しください</string>
+    <string name="error_server">サーバーエラー（%1$d）</string>
+    <string name="error_invalid_credentials">ログイン ID またはパスワードが正しくありません</string>
+    <string name="error_account_exists">このメールアドレスのアカウントは既に存在します</string>
+    <string name="error_check_member_fields">メールアドレスとパスワード（10 文字以上）を確認してください</string>
+    <string name="error_not_backed_up">この写真はまだサーバーにバックアップされていません</string>
+    <string name="member_added">%1$s さんを家族に追加しました</string>
+    <string name="enhance_started">補正中です。まもなく元の写真の隣にコピーが表示されます</string>
+    <string name="enhance_failed">補正できませんでした（%1$d）</string>
+    <string name="album_created">アルバム「%1$s」を作成しました</string>
+    <plurals name="items_added_to_backup">
+        <item quantity="other">%1$d 件をバックアップに追加しました</item>
+    </plurals>
+    <plurals name="items_restored">
+        <item quantity="other">%1$d 件を復元しました</item>
+    </plurals>
+    <plurals name="items_added">
+        <item quantity="other">%1$d 件を追加しました</item>
+    </plurals>
+
+    <!-- Notification de sauvegarde -->
+    <string name="channel_sync">バックアップ</string>
+    <string name="notif_backup_title">写真をバックアップ中</string>
+    <plurals name="notif_items_to_send">
+        <item quantity="other">残り %1$d 件</item>
+    </plurals>
+
+    <!-- Suppression / albums -->
+    <plurals name="delete_items_title">
+        <item quantity="other">%1$d 件を削除しますか？</item>
+    </plurals>
+    <string name="delete_server_note">サーバーのゴミ箱に移動します（[管理] → [ゴミ箱] から復元できます）。</string>
+    <string name="delete_phone_note">うち %1$d 件はこのスマートフォンのゴミ箱にも移動します（30 日間保存）。</string>
+    <plurals name="skipped_not_backed_up">
+        <item quantity="other">まだバックアップされていない %1$d 件は追加されません。</item>
+    </plurals>
+    <string name="create_and_add">作成して追加</string>
+
+    <!-- Nettoyage et corbeille -->
+    <string name="cleanup_title">ライブラリを整理</string>
+    <string name="cleanup_duplicates">重複</string>
+    <string name="cleanup_duplicates_help">連写などでほぼ同じ写真です。各グループで最も鮮明な 1 枚が残ります。</string>
+    <string name="cleanup_blurry">ぼやけた写真</string>
+    <string name="cleanup_blurry_help">手ぶれやピンぼけで、どこにもピントが合っていない写真です。</string>
+    <string name="cleanup_dark">暗すぎ・明るすぎ</string>
+    <string name="cleanup_dark_help">ほぼ真っ黒（ポケットの中、レンズが隠れている）またはほぼ真っ白な写真です。</string>
+    <string name="cleanup_screenshots">スクリーンショット</string>
+    <string name="cleanup_screenshots_help">AI がスクリーンショットと判定した画像です。</string>
+    <string name="cleanup_words">キーワード</string>
+    <string name="cleanup_words_help">削除したい写真の内容を入力してください（例:「レシート」「ぼやけたテレビの写真」）</string>
+    <string name="cleanup_words_placeholder">例: レシート</string>
+    <string name="trash_count">ゴミ箱に移動（%1$d）</string>
+    <string name="searching">検索中…</string>
+    <string name="analyzing">分析中…</string>
+    <string name="cleanup_words_empty">削除したい写真の内容を入力してください</string>
+    <string name="cleanup_nothing">整理するものはありません</string>
+    <string name="cleanup_words_empty_text">検索はサーバー上の AI で行われます。分析済みの写真のみが対象です。</string>
+    <string name="cleanup_nothing_text">分析中の写真は後で表示されます。</string>
+    <string name="restore_count">復元（%1$d）</string>
+    <string name="trash_empty">ゴミ箱は空です</string>
+    <string name="trash_empty_text">アプリやウェブ版で削除した写真はここに移動し、復元できます。</string>
+
+    <!-- Explorer -->
+    <string name="search_hint">写真を検索</string>
+    <string name="back_to_explore">検索に戻る</string>
+    <string name="no_results">「%1$s」に一致する結果はありません</string>
+    <string name="section_people">人物</string>
+    <string name="add_name">名前を追加</string>
+    <string name="section_categories">カテゴリ</string>
+    <string name="section_places">場所</string>
+    <string name="section_albums">アルバム</string>
+    <string name="section_ideas">検索のヒント</string>
+    <string name="explore_empty">サーバーで写真の分析が終わると、ここに人物や場所が表示されます。</string>
+    <string name="suggestion_sunset">夕焼け</string>
+    <string name="suggestion_cat">猫</string>
+    <string name="suggestion_dog">犬</string>
+    <string name="suggestion_party">パーティー</string>
+    <string name="suggestion_city_night">街の夜景</string>
+    <string name="suggestion_selfie">セルフィー</string>
+
+    <!-- Catégories IA (clé serveur → libellé affiché) -->
+    <string name="category_beach">ビーチ</string>
+    <string name="category_mountain">山</string>
+    <string name="category_nature">自然</string>
+    <string name="category_city">街</string>
+    <string name="category_food">食べ物</string>
+    <string name="category_animals">動物</string>
+    <string name="category_kids">赤ちゃん・子ども</string>
+    <string name="category_selfies">セルフィー</string>
+    <string name="category_groups">グループ写真</string>
+    <string name="category_parties">パーティー</string>
+    <string name="category_snow">雪</string>
+    <string name="category_night">夜景</string>
+    <string name="category_cars">車</string>
+    <string name="category_documents">書類</string>
+    <string name="category_screenshots">スクリーンショット</string>
+
+    <!-- Famille -->
+    <string name="section_family">家族</string>
+    <string name="family_help">メンバーはそれぞれ自分のアカウントでログインし、同じライブラリを見られます。</string>
+    <string name="member_me">%1$s（自分）</string>
+    <string name="add_member">メンバーを追加</string>
+    <string name="edit_member">%1$s を編集</string>
+    <string name="first_name">名前</string>
+    <string name="member_login_label">ログイン ID（名前、ニックネーム、メールアドレス）</string>
+    <string name="member_password_label">パスワード（10 文字以上）</string>
+    <string name="role_papa">パパ</string>
+    <string name="role_maman">ママ</string>
+    <string name="role_enfant">子ども</string>
+    <string name="role_grand_parent">祖父母</string>
+    <string name="role_autre">その他</string>
+
+    <!-- Grille -->
+    <string name="action_select">選択</string>
+    <string name="action_open">開く</string>
+    <string name="state_selected">選択済み</string>
+    <string name="badge_synced">バックアップ済み</string>
+    <string name="badge_pending">アップロード待ち</string>
+    <string name="badge_uploading">アップロード中</string>
+    <string name="badge_error">バックアップエラー</string>
+    <string name="photo_of_date">%1$s の写真</string>
+    <string name="video_of_date">%1$s の動画</string>
+
+    <!-- Collections -->
+    <string name="name_person">名前を付ける</string>
+    <string name="delete_album">アルバムを削除</string>
+    <string name="nothing_here">まだ何もありません。</string>
+    <string name="name_person_title">この人に名前を付ける</string>
+    <string name="name_label">名前</string>
+    <string name="delete_album_title">アルバム「%1$s」を削除しますか？</string>
+    <string name="delete_album_text">写真は削除されません。</string>
+
+    <!-- Connexion -->
+    <string name="login_intro">家族用に作成されたアカウントでログインしてください。</string>
+    <string name="login_id">ログイン ID</string>
+    <string name="password">パスワード</string>
+    <string name="server_address">サーバーのアドレス</string>
+    <string name="sign_in">ログイン</string>
+    <string name="use_other_server">別のサーバーを使用</string>
+
+    <!-- Récents et Souvenirs -->
+    <string name="pending_backup_header">バックアップ待ち（%1$d）</string>
+    <string name="nothing_recent">最近の項目はありません</string>
+    <string name="nothing_recent_text">スマートフォン、ウェブ版、NAS から追加した写真がここに表示されます。</string>
+    <string name="added_older">それ以前</string>
+    <string name="added_today">今日追加</string>
+    <string name="added_yesterday">昨日追加</string>
+    <string name="added_on">%1$s に追加</string>
+    <string name="no_memories">今週の思い出はありません</string>
+    <string name="no_memories_text">過去の同じ週に撮影した写真がここに表示されます。</string>
+    <string name="view_memory">思い出を見る</string>
+    <plurals name="years_ago">
+        <item quantity="other">%1$d 年前</item>
+    </plurals>
+    <plurals name="memory_photos">
+        <item quantity="other">%1$d 枚 • %2$d年</item>
+    </plurals>
+
+    <!-- Gérer -->
+    <string name="section_account">アカウント</string>
+    <string name="account_connected">ログイン中のアカウント</string>
+    <string name="section_backup">バックアップ</string>
+    <string name="backup_now">今すぐバックアップ</string>
+    <string name="backup_progress">%1$d / %2$d 件バックアップ済み</string>
+    <string name="backup_errors_suffix">" • エラー %1$d 件"</string>
+    <string name="backup_started">バックアップを開始しました</string>
+    <string name="auto_backup">自動バックアップ</string>
+    <string name="auto_backup_on">新しい写真や動画を自動的にサーバーへ送信します</string>
+    <string name="auto_backup_off">オフ: [今すぐバックアップ] を押したときのみ送信します</string>
+    <string name="wifi_only">Wi-Fi 接続時のみ</string>
+    <string name="wifi_only_text">モバイルデータを使用しない</string>
+    <string name="charging_only">充電中のみ</string>
+    <string name="charging_only_text">スマートフォンの充電中のみバックアップします</string>
+    <string name="section_library">ライブラリ</string>
+    <string name="cleanup_subtitle">重複、ぼやけた写真や失敗した写真、スクリーンショット、キーワードで整理</string>
+    <string name="trash_subtitle">削除した写真を復元</string>
+    <string name="section_computer">パソコン</string>
+    <string name="web_version">ウェブ版</string>
+    <string name="web_version_text">パソコンから閲覧・アップロード: %1$s</string>
+    <string name="sign_out">ログアウト</string>
+
+    <!-- Onglet Photos -->
+    <string name="cancel_selection">選択を解除</string>
+    <plurals name="selected_count">
+        <item quantity="other">%1$d 件選択</item>
+    </plurals>
+    <string name="show_grid">グリッド表示</string>
+    <string name="show_mosaic">モザイク表示</string>
+    <string name="choose_year">年を選択</string>
+    <string name="backup_auto_off">自動バックアップはオフです</string>
+    <string name="backup_pending_suffix">" • 待機中 %1$d 件"</string>
+    <plurals name="backup_remaining">
+        <item quantity="other">バックアップ中: 残り %1$d 件</item>
+    </plurals>
+    <plurals name="items_in_error">
+        <item quantity="other">エラー %1$d 件</item>
+    </plurals>
+    <string name="backup_done">バックアップ完了</string>
+
+    <!-- Visionneuse -->
+    <string name="you">あなた</string>
+    <string name="added_by_viewer">%1$s が追加</string>
+    <string name="uploaded_by">%1$s が追加</string>
+    <string name="info">情報</string>
+    <string name="enhance">補正</string>
+    <string name="album">アルバム</string>
+    <string name="enhance_title">写真を補正</string>
+    <string name="enhance_text">補正したコピーが元の写真の隣に追加されます。元の写真は変更されません。</string>
+    <string name="enhance_auto">自動（プライベート）</string>
+    <string name="enhance_gemini">Gemini を使用（Google に送信）</string>
+    <string name="not_backed_up_yet">まだサーバーにバックアップされていません。</string>
+    <string name="file">ファイル</string>
+    <string name="size_kb">%1$d KB</string>
+    <string name="size_mb">%1$.1f MB</string>
+    <string name="detected_text">検出されたテキスト</string>
+    <string name="update_title">アップデートがあります</string>
+    <string name="update_text">MemoriesBK の新しいバージョンがあります。今すぐインストールしますか？</string>
+    <string name="update_downloading">ダウンロード中…</string>
+    <string name="update_install">インストール</string>
+    <string name="update_later">後で</string>
+    <string name="update_failed">アップデートできませんでした：%1$s</string>
+    <string name="share_app">アプリを共有</string>
+    <string name="share_app_text">ダウンロードリンクを家族に送る</string>
+    <string name="share_app_message">家族の写真アプリ MemoriesBK をインストールしてね：%1$s</string>
+    <string name="like">いいね</string>
+    <string name="comment">コメント</string>
+    <string name="comments">コメント</string>
+    <string name="liked_by">%1$s がいいねしました</string>
+    <string name="no_comments">まだコメントはありません</string>
+    <string name="add_comment">コメントを追加…</string>
+    <string name="send">送信</string>
+    <string name="admin">管理者</string>
+    <string name="limited_access">制限付きアクセス</string>
+    <string name="sharing_button">閲覧できる写真</string>
+    <string name="sharing_title">%1$s が見られる写真</string>
+    <string name="sharing_all">家族のすべての写真</string>
+    <string name="sharing_limited">一部の写真のみ</string>
+    <string name="sharing_help">%1$s は自分の写真に加えて、下のルールのいずれかに一致する写真を見られます。</string>
+    <string name="sharing_add_rule">ルールを追加</string>
+    <string name="sharing_since">%1$s 年から</string>
+    <string name="sharing_until">%1$s 年まで</string>
+    <string name="sharing_any_date">すべての期間</string>
+    <string name="sharing_all_photos">すべての写真</string>
+    <string name="sharing_from_year">開始年</string>
+    <string name="sharing_to_year">終了年</string>
+    <string name="sharing_people">写っている人</string>
+    <string name="sharing_albums">またはアルバム</string>
+    <string name="sharing_rule_help">人もアルバムも選ばない場合は、期間内のすべての写真が対象です。人物は顔認識で判定されます。</string>
+</resources>

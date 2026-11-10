@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Let's Encrypt et Tailscale (`tailscale serve`) : autorités système.
+     Certificat auto-signé : installer sa CA dans Paramètres > Sécurité > Certificat CA (autorités "user"). -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
+    <!-- Serveur sur le Wi-Fi de la maison (option « Réseau de la maison ») : HTTP, ne sort pas du réseau local -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">192.168.1.41</domain>
+    </domain-config>
+</network-security-config>

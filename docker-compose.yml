@@ -1,0 +1,132 @@
+# docker compose up -d --build                       (API + workers + DB + Redis)
+# docker compose --profile ollama up -d               (+ VLM local, VLM_PROVIDER=ollama)
+# docker compose exec api python api.py create-user moi@example.com
+name: photos
+
+x-server: &server
+  build: ./server
+  image: photos-server
+  restart: unless-stopped
+  env_file: .env
+  environment:
+    DATABASE_URL: postgresql://photos:${POSTGRES_PASSWORD}@postgres/photos
+    REDIS_URL: redis://redis:6379/0
+    PHOTOS_DIR: /photos
+    QUARANTINE_DIR: /photos/.quarantine   # même FS que /photos : rename atomique
+    THUMBS_DIR: /thumbs
+    OLLAMA_URL: http://ollama:11434
+    # VM 2 Go : glibc crée une « arène » mémoire par thread, qui gonfle au fil des heures avec le pool de threads
+    MALLOC_ARENA_MAX: "2"
+    # Threads internes et cache de libvips / torch / onnxruntime : peu de cœurs, peu de RAM
+    VIPS_CONCURRENCY: "1"
+    OMP_NUM_THREADS: "2"
+    MKL_NUM_THREADS: "2"
+  volumes:
+    - type: bind
+      source: ${PHOTOS_HOST_DIR:?chemin du montage NAS requis}
+      target: /photos
+      bind:
+        create_host_path: false   # NAS non monté => le conteneur refuse de démarrer au lieu d'écrire sur le disque local
+    - ${THUMBS_HOST_DIR:-./data/thumbs}:/thumbs
+    - ${IMPORT_HOST_DIR:-./data/import}:/import:ro   # sources d'import parcourables depuis la page web
+    - models:/root/.cache                 # poids CLIP (Hugging Face)
+    - insightface:/root/.insightface      # poids buffalo_l
+  depends_on:
+    postgres: { condition: service_healthy }
+    redis: { condition: service_healthy }
+
+services:
+  postgres:
+    image: pgvector/pgvector:0.8.0-pg16
+    restart: unless-stopped
+    # Réglages petite machine (2 Go) ; à relever sur un serveur plus gros
+    command: ["postgres", "-c", "shared_buffers=128MB", "-c", "work_mem=8MB",
+              "-c", "maintenance_work_mem=128MB", "-c", "max_connections=30"]
+    environment:
+      POSTGRES_USER: photos
+      POSTGRES_DB: photos
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
+    volumes:
+      # Disque local (SSD), jamais sur NFS/SMB : PostgreSQL y perd ses garanties d'écriture
+      - ${PG_HOST_DIR:-./data/postgres}:/var/lib/postgresql/data
+      # appliqués au 1er démarrage seulement ; sur une base existante : psql -f db/migrations/<fichier>.sql
+      - ./db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./db/migrations/002_import_jobs.sql:/docker-entrypoint-initdb.d/02-import-jobs.sql:ro
+      - ./db/migrations/003_family_ai.sql:/docker-entrypoint-initdb.d/03-family-ai.sql:ro
+      - ./db/migrations/004_quality.sql:/docker-entrypoint-initdb.d/04-quality.sql:ro
+      - ./db/migrations/005_face_manual.sql:/docker-entrypoint-initdb.d/05-face-manual.sql:ro
+      - ./db/migrations/006_memory_videos.sql:/docker-entrypoint-initdb.d/06-memory-videos.sql:ro
+      - ./db/migrations/007_media_name_idx.sql:/docker-entrypoint-initdb.d/07-media-name-idx.sql:ro
+      - ./db/migrations/008_social.sql:/docker-entrypoint-initdb.d/08-social.sql:ro
+      - ./db/migrations/009_share_rules.sql:/docker-entrypoint-initdb.d/09-share-rules.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U photos -d photos"]
+      interval: 5s
+      retries: 20
+
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]   # les tâches en file survivent à un redémarrage
+    volumes:
+      - redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 20
+
+  api:
+    <<: *server
+    command: ["uvicorn", "api:app", "--host", "0.0.0.0", "--port", "8080", "--proxy-headers",
+              "--forwarded-allow-ips", "*"]
+    ports:
+      - "8080:8080"   # exposer en HTTPS via reverse proxy (Caddy) ou `tailscale serve`, pas en clair sur Internet
+
+  worker:
+    <<: *server
+    # Un seul process (pool de threads) pour toutes les files + beat intégré :
+    #  - CLIP et InsightFace chargés une seule fois en RAM (VM 2 Go) ;
+    #  - consommateur unique => le rate_limit Gemini est global ;
+    #  - plusieurs threads => une recherche (file `query`) n'attend pas la fin d'un ingest.
+    # Ne lancer qu'une réplique de ce service (beat intégré).
+    command: ["celery", "-A", "tasks", "worker", "-B", "-s", "/tmp/celerybeat-schedule",
+              "-Q", "${WORKER_QUEUES:-query,media,vlm}", "--pool", "threads", "-c", "${WORKER_THREADS:-3}"]
+    # `ml` absente au démarrage : tasks.ml_gate() l'ajoute quand la file d'import est vide (sinon VM saturée)
+    # Garde-fou VM 2 Go : au-delà, seul le worker est tué puis relancé (restart), au lieu de figer toute la VM
+    # (vu le 9/11 : swap + zram saturés, VM injoignable). Les tâches interrompues sont relancées par housekeeping.
+    mem_limit: ${WORKER_MEM_LIMIT:-1300m}
+    memswap_limit: ${WORKER_MEMSWAP_LIMIT:-2300m}
+
+  ollama:
+    image: ollama/ollama:0.5.7
+    profiles: ["ollama"]
+    restart: unless-stopped
+    volumes:
+      - ollama:/root/.ollama
+    # Après le 1er démarrage : docker compose exec ollama ollama pull qwen2.5vl:7b
+
+  web:
+    # PWA (SvelteKit) : étape suivante du projet, le dossier ./web n'existe pas encore
+    build: ./web
+    profiles: ["web"]
+    restart: unless-stopped
+    environment:
+      PUBLIC_API_URL: ${PUBLIC_API_URL:-http://localhost:8080}
+    ports:
+      - "3000:3000"
+
+volumes:
+  models:
+  insightface:
+  redis:
+  ollama:
+
+# Alternative au bind-mount : laisser Docker monter le partage NFS du NAS lui-même.
+# Remplacer alors `${PHOTOS_HOST_DIR}:/photos` par `photos:/photos` et ajouter :
+# volumes:
+#   photos:
+#     driver: local
+#     driver_opts:
+#       type: nfs
+#       o: "addr=192.168.1.10,rw,nfsvers=4.1"
+#       device: ":/volume1/photos"

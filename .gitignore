@@ -1,0 +1,14 @@
+# Secrets : ne jamais publier
+.env
+*.jks
+keystore.properties
+
+# APK compilés (distribués par le serveur, pas par git)
+*.apk
+server/web/MemoriesBK.version
+
+# Données locales et caches
+data/
+__pycache__/
+.pytest_cache/
+.claude/

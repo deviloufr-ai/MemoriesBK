@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Médias serveur téléchargés pour le partage (cf. ui/Actions.kt) -->
+<paths>
+    <cache-path name="shared" path="shared/" />
+    <!-- APK de mise à jour (cf. ui/Update.kt) -->
+    <cache-path name="updates" path="updates/" />
+</paths>

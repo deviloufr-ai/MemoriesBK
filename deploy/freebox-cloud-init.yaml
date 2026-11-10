@@ -1,0 +1,36 @@
+#cloud-config
+# À coller tel quel dans « cloud-init user-data » à la création de la VM Freebox (Ubuntu ARM64).
+# Connexion ensuite : ssh freebox@<ip-de-la-vm>  (clé uniquement, pas de mot de passe)
+timezone: Europe/Paris
+
+users:
+  - name: freebox
+    groups: [sudo]
+    shell: /bin/bash
+    sudo: "ALL=(ALL) NOPASSWD:ALL"   # pas de mot de passe sur ce compte : sudo sans mot de passe
+    lock_passwd: true
+    ssh_authorized_keys:
+      - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFao2jzyQjkplLZcAklraxJOZVhLdU64WdEAZ+X2YU/T dashwheel-pc
+
+ssh_pwauth: false
+
+# 2 Go de RAM : le swap absorbe le chargement des modèles CLIP / visages
+swap:
+  filename: /swapfile
+  size: 4G
+  maxsize: 4G
+
+package_update: true
+package_upgrade: true
+packages:
+  - ca-certificates
+  - curl
+
+runcmd:
+  - curl -fsSL https://get.docker.com | sh
+  - usermod -aG docker freebox
+  - systemctl enable --now docker
+  - sysctl -w vm.swappiness=10
+  - echo 'vm.swappiness=10' > /etc/sysctl.d/99-photos.conf
+  - mkdir -p /srv/photos && chown freebox:freebox /srv/photos
+  - touch /var/lib/cloud/instance/photos-ready
