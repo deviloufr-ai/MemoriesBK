@@ -27,8 +27,26 @@ def _load_clip():
     import open_clip
     import torch
 
-    model, _, preprocess = open_clip.create_model_and_transforms(CLIP_ARCH, pretrained=CLIP_PRETRAINED)
+    from open_clip.pretrained import download_pretrained, get_pretrained_cfg
+
+    # VM 2 Go : un chargement classique copie 1,5 Go de poids en RAM anonyme (OOM en boucle le 10/11).
+    # Modèle construit sur `meta` puis poids pris en mmap : pages adossées au fichier, que le noyau peut libérer.
+    cfg = get_pretrained_cfg(CLIP_ARCH, CLIP_PRETRAINED)
+    with torch.device("meta"):
+        model = open_clip.create_model(CLIP_ARCH, pretrained_hf=False, device="meta")
+    sd = torch.load(download_pretrained(cfg), map_location="cpu", mmap=True, weights_only=True)
+    sd = {k.removeprefix("module."): v for k, v in sd.get("state_dict", sd).items()}
+    model.load_state_dict(sd, assign=True, strict=False)
+    emb = getattr(getattr(model, "text", None), "transformer", None)
+    emb = getattr(emb, "embeddings", None)
+    if emb is not None:  # buffers non sauvegardés dans le checkpoint (XLM-RoBERTa) : à recréer
+        emb.position_ids = torch.arange(emb.position_embeddings.num_embeddings).expand((1, -1))
+        emb.token_type_ids = torch.zeros_like(emb.position_ids)
+    missing = [n for n, t in [*model.named_parameters(), *model.named_buffers()] if t.is_meta]
+    assert not missing, f"poids CLIP absents du checkpoint : {missing}"
     model.eval()
+    preprocess = open_clip.image_transform(model.visual.image_size, is_train=False,
+                                           mean=cfg.get("mean"), std=cfg.get("std"))
     return model, preprocess, open_clip.get_tokenizer(CLIP_ARCH), torch
 
 

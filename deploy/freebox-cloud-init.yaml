@@ -26,7 +26,34 @@ packages:
   - ca-certificates
   - curl
 
+write_files:
+  # Le 11/11, networkd est resté « Failed » après un gel mémoire : bail DHCP non renouvelé, VM hors réseau.
+  - path: /usr/local/bin/net-watchdog
+    permissions: "0755"
+    content: |
+      #!/bin/sh
+      ping -c 3 -W 3 192.168.1.254 >/dev/null 2>&1 && exit 0
+      logger -t net-watchdog "passerelle injoignable : relance du réseau"
+      networkctl reconfigure enp0s5 || systemctl restart systemd-networkd
+  - path: /etc/systemd/system/net-watchdog.service
+    content: |
+      [Unit]
+      Description=Relance le reseau si la passerelle ne repond plus
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/local/bin/net-watchdog
+  - path: /etc/systemd/system/net-watchdog.timer
+    content: |
+      [Unit]
+      Description=Verifie le reseau toutes les 2 minutes
+      [Timer]
+      OnBootSec=5min
+      OnUnitActiveSec=2min
+      [Install]
+      WantedBy=timers.target
+
 runcmd:
+  - systemctl daemon-reload && systemctl enable --now net-watchdog.timer
   - curl -fsSL https://get.docker.com | sh
   - usermod -aG docker freebox
   - systemctl enable --now docker
