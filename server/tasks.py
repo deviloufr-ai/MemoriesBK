@@ -5,6 +5,7 @@ import os
 import shutil
 import subprocess
 from datetime import datetime, timezone
+from functools import cache
 from pathlib import Path
 
 import psycopg
@@ -12,8 +13,9 @@ import redis
 from celery import Celery
 from celery.schedules import crontab
 from celery.signals import worker_ready
-from pgvector.psycopg import register_vector
+from pgvector.psycopg.vector import register_vector_info
 from psycopg.rows import dict_row
+from psycopg.types import TypeInfo
 
 import vlm
 from metadata import date_from_name, extract_fields, media_mime, safe_join, storage_rel_path, thumb_rel_dir, visible_dir
@@ -91,10 +93,16 @@ def part_path(upload_id) -> Path:
     return QUARANTINE_DIR / f"{upload_id}.part"
 
 
+@cache
+def _register_vector() -> None:
+    # Une seule fois, en global : register_vector par connexion crée 8 classes jamais libérées (fuite du worker, 11/11)
+    with psycopg.connect(DSN) as conn:
+        register_vector_info(psycopg.adapters, TypeInfo.fetch(conn, "vector"))
+
+
 def db() -> psycopg.Connection:
-    conn = psycopg.connect(DSN, autocommit=True, row_factory=dict_row)
-    register_vector(conn)
-    return conn
+    _register_vector()
+    return psycopg.connect(DSN, autocommit=True, row_factory=dict_row)
 
 
 def family_ids(conn, user_id) -> list:
