@@ -20,6 +20,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Groups
+import androidx.compose.material.icons.outlined.Pets
+import androidx.compose.material3.Icon
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -144,17 +148,51 @@ fun rememberAddToAlbum(vm: GalleryViewModel, onDone: () -> Unit = {}): (List<Gri
     var items by remember { mutableStateOf<List<GridItem>?>(null) }
     items?.let { target ->
         val albums by vm.albums.collectAsState()
+        val pets by vm.pets.collectAsState()
         var title by remember { mutableStateOf("") }
-        LaunchedEffect(Unit) { vm.loadAlbums() }
+        var petMode by remember { mutableStateOf(false) }  // « Mon animal » : ces photos servent d'exemples
+        LaunchedEffect(Unit) { vm.loadAlbums(); vm.loadExplore() }
         val skipped = target.count { it.remoteId == null }
         AlertDialog(
             onDismissRequest = { items = null },
-            title = { Text(stringResource(R.string.add_to_album)) },
+            title = { Text(stringResource(if (petMode) R.string.my_pet else R.string.add_to_album)) },
             text = {
                 Column {
                     if (skipped > 0) Text(pluralStringResource(R.plurals.skipped_not_backed_up, skipped, skipped),
                         style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(bottom = 8.dp))
-                    LazyColumn(Modifier.heightIn(max = 280.dp)) {
+                    if (petMode) {
+                        Text(stringResource(R.string.my_pet_help), style = MaterialTheme.typography.bodySmall)
+                        pets.forEach { pet ->
+                            Text(pet.name, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.fillMaxWidth()
+                                .clickable { vm.namePet(pet.name, target); items = null; onDone() }.padding(vertical = 12.dp))
+                        }
+                        OutlinedTextField(title, { title = it }, label = { Text(stringResource(R.string.pet_name)) }, singleLine = true,
+                            modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
+                    } else LazyColumn(Modifier.heightIn(max = 280.dp)) {
+                        item(key = "family") {
+                            Row(
+                                Modifier.fillMaxWidth().clickable { vm.shareToFamily(target); items = null; onDone() }.padding(vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Icon(Icons.Outlined.Groups, null, Modifier.size(48.dp).padding(10.dp))
+                                Column(Modifier.padding(start = 12.dp)) {
+                                    Text(stringResource(R.string.tab_family), style = MaterialTheme.typography.bodyLarge)
+                                    Text(stringResource(R.string.share_family_hint), style = MaterialTheme.typography.bodySmall)
+                                }
+                            }
+                        }
+                        item(key = "pet") {
+                            Row(
+                                Modifier.fillMaxWidth().clickable { petMode = true; title = "" }.padding(vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Icon(Icons.Outlined.Pets, null, Modifier.size(48.dp).padding(10.dp))
+                                Column(Modifier.padding(start = 12.dp)) {
+                                    Text(stringResource(R.string.my_pet), style = MaterialTheme.typography.bodyLarge)
+                                    Text(stringResource(R.string.my_pet_hint), style = MaterialTheme.typography.bodySmall)
+                                }
+                            }
+                        }
                         items(albums, key = { it.id }) { album ->
                             Row(
                                 Modifier.fillMaxWidth().clickable {
@@ -171,15 +209,18 @@ fun rememberAddToAlbum(vm: GalleryViewModel, onDone: () -> Unit = {}): (List<Gri
                             }
                         }
                     }
-                    HorizontalDivider(Modifier.padding(vertical = 8.dp))
-                    OutlinedTextField(title, { title = it }, label = { Text(stringResource(R.string.new_album)) }, singleLine = true,
-                        modifier = Modifier.fillMaxWidth())
+                    if (!petMode) {
+                        HorizontalDivider(Modifier.padding(vertical = 8.dp))
+                        OutlinedTextField(title, { title = it }, label = { Text(stringResource(R.string.new_album)) }, singleLine = true,
+                            modifier = Modifier.fillMaxWidth())
+                    }
                 }
             },
             confirmButton = {
                 TextButton(enabled = title.isNotBlank(), onClick = {
-                    vm.createAlbum(title, target); items = null; onDone()
-                }) { Text(stringResource(R.string.create_and_add)) }
+                    if (petMode) vm.namePet(title, target) else vm.createAlbum(title, target)
+                    items = null; onDone()
+                }) { Text(stringResource(if (petMode) R.string.pet_confirm else R.string.create_and_add)) }
             },
             dismissButton = { TextButton(onClick = { items = null }) { Text(stringResource(R.string.cancel)) } },
         )

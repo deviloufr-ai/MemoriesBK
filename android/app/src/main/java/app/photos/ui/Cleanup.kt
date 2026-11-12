@@ -103,12 +103,20 @@ fun CleanupScreen(vm: GalleryViewModel, onOpen: (List<GridItem>, Int) -> Unit, t
                     TextButton(onClick = { selected = items.map { it.key }.toSet() }) { Text(stringResource(R.string.select_all)) }
                     TextButton(onClick = { selected = emptySet() }) { Text(stringResource(R.string.select_none)) }
                     Button(
-                        onClick = { trash(items.filter { it.key in selected }) },
-                        enabled = selected.isNotEmpty(),
+                        onClick = {
+                            // Décochées = gardées : elles ne reviennent pas au prochain passage (sauf « par mots »)
+                            val kept = items.filter { it.key !in selected }
+                            if (kind != "words" && kept.isNotEmpty()) vm.keepCleanup(kind, kept)
+                            if (selected.isNotEmpty()) trash(items.filter { it.key in selected })
+                        },
+                        enabled = selected.isNotEmpty() || kind != "words",
                         modifier = Modifier.weight(1f),
                     ) {
-                        Icon(Icons.Outlined.DeleteOutline, null)
-                        Text(" " + stringResource(R.string.trash_count, selected.size))
+                        if (selected.isEmpty()) Text(stringResource(R.string.keep_all))
+                        else {
+                            Icon(Icons.Outlined.DeleteOutline, null)
+                            Text(" " + stringResource(R.string.trash_count, selected.size))
+                        }
                     }
                 }
             }

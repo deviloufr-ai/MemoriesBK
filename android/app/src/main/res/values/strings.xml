@@ -2,7 +2,7 @@
 <resources>
     <!-- Onglets -->
     <string name="tab_photos">Photos</string>
-    <string name="tab_recent">Récents</string>
+    <string name="tab_family">Famille</string>
     <string name="tab_memories">Souvenirs</string>
     <string name="tab_explore">Explorer</string>
     <string name="tab_manage">Gérer</string>
@@ -127,6 +127,7 @@
     <string name="analyzing">Analyse en cours…</string>
     <string name="cleanup_words_empty">Décris les photos à supprimer</string>
     <string name="cleanup_nothing">Rien à nettoyer ici</string>
+    <string name="keep_all">Tout garder</string>
     <string name="cleanup_words_empty_text">La recherche utilise l\'IA locale : seules les photos déjà analysées sont trouvées.</string>
     <string name="cleanup_nothing_text">Les photos encore en cours d\'analyse apparaîtront plus tard.</string>
     <string name="restore_count">Restaurer (%1$d)</string>
@@ -213,8 +214,26 @@
 
     <!-- Récents et Souvenirs -->
     <string name="pending_backup_header">En attente de sauvegarde (%1$d)</string>
-    <string name="nothing_recent">Rien de récent</string>
-    <string name="nothing_recent_text">Les photos ajoutées depuis le téléphone, la version web ou le NAS apparaîtront ici.</string>
+    <string name="family_empty">Rien de partagé pour l\'instant</string>
+    <string name="family_empty_text">Sélectionne des photos, touche « Ajouter à un album » puis « Famille » : tous les membres les verront ici.</string>
+    <string name="share_family_hint">Visible par toute la famille</string>
+    <string name="remove_from_family">Retirer de Famille</string>
+    <string name="family_by_face">Ajouter une personne ou un animal</string>
+    <string name="section_pets">Animaux</string>
+    <string name="my_pet">Mon animal</string>
+    <string name="my_pet_hint">Donner un nom à ton chien, ton chat…</string>
+    <string name="my_pet_help">Ces photos servent d\'exemples : ses autres photos sont retrouvées automatiquement. Choisis un animal existant ou donne un nouveau nom.</string>
+    <string name="pet_name">Nom de l\'animal</string>
+    <string name="pet_confirm">Nommer</string>
+    <string name="pet_named">« %1$s » : ses photos apparaissent dans Explorer</string>
+    <string name="delete_pet_title">Oublier « %1$s » ?</string>
+    <string name="delete_pet_text">Seul le nom est supprimé, les photos restent.</string>
+    <string name="family_by_face_help">Toutes les photos des personnes et animaux cochés, y compris les futures, apparaissent dans Famille.</string>
+    <plurals name="items_shared_family">
+        <item quantity="one">%d élément partagé avec la famille</item>
+        <item quantity="many">%d éléments partagés avec la famille</item>
+        <item quantity="other">%d éléments partagés avec la famille</item>
+    </plurals>
     <string name="added_older">Plus ancien</string>
     <string name="added_today">Ajoutés aujourd\'hui</string>
     <string name="added_yesterday">Ajoutés hier</string>

@@ -18,12 +18,12 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Photo
 import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.ManageAccounts
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.Photo
 import androidx.compose.material.icons.outlined.AutoAwesome
-import androidx.compose.material.icons.outlined.History
+import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.ManageAccounts
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material.icons.outlined.Search
@@ -64,7 +64,7 @@ import app.photos.ui.GalleryViewModel
 import app.photos.ui.GridItem
 import app.photos.ui.ManageTab
 import app.photos.ui.MemoriesTab
-import app.photos.ui.RecentTab
+import app.photos.ui.FamilyTab
 import app.photos.ui.LoginScreen
 import app.photos.ui.PhotosTab
 import app.photos.ui.ViewerScreen
@@ -82,7 +82,7 @@ private data class TabSpec(@StringRes val label: Int, val icon: ImageVector, val
 
 private val TABS = listOf(
     TabSpec(R.string.tab_photos, Icons.Outlined.Photo, Icons.Filled.Photo),
-    TabSpec(R.string.tab_recent, Icons.Outlined.History, Icons.Filled.History),
+    TabSpec(R.string.tab_family, Icons.Outlined.Groups, Icons.Filled.Groups),
     TabSpec(R.string.tab_memories, Icons.Outlined.AutoAwesome, Icons.Filled.AutoAwesome),
     TabSpec(R.string.tab_explore, Icons.Outlined.Search, Icons.Filled.Search),
     TabSpec(R.string.tab_manage, Icons.Outlined.ManageAccounts, Icons.Filled.ManageAccounts),
@@ -183,7 +183,7 @@ class MainActivity : ComponentActivity() {
                 Box(Modifier.padding(bottom = padding.calculateBottomPadding())) {
                     when (tab) {
                         0 -> PhotosTab(vm, gridState, open, onSearch = { tab = 3 }, share, trash, addToAlbum, selected) { selected = it }
-                        1 -> RecentTab(vm, open)
+                        1 -> FamilyTab(vm, open)
                         2 -> MemoriesTab(vm, open)
                         3 -> ExploreTab(vm, open, openCollection)
                         else -> ManageTab(vm, onCleanup = { overlays += Overlay.Cleanup }, onTrash = { overlays += Overlay.Trash })

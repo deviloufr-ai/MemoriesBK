@@ -70,6 +70,7 @@ fun ExploreTab(vm: GalleryViewModel, onOpen: (List<GridItem>, Int) -> Unit, onCo
     val results by vm.searchResults.collectAsState()
     val searching by vm.searching.collectAsState()
     val people by vm.people.collectAsState()
+    val pets by vm.pets.collectAsState()
     val places by vm.places.collectAsState()
     val albums by vm.albums.collectAsState()
     val categories by vm.categories.collectAsState()
@@ -132,6 +133,24 @@ fun ExploreTab(vm: GalleryViewModel, onOpen: (List<GridItem>, Int) -> Unit, onCo
                                 Text(p.name ?: stringResource(R.string.add_name), style = MaterialTheme.typography.labelMedium,
                                     maxLines = 1, overflow = TextOverflow.Ellipsis,
                                     color = if (p.name == null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier.padding(top = 4.dp))
+                            }
+                        }
+                    }
+                }
+            }
+            if (pets.isNotEmpty()) {
+                item { SectionTitle(stringResource(R.string.section_pets)) }
+                item {
+                    LazyRow(contentPadding = PaddingValues(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        items(pets, key = { it.id }) { p ->
+                            Column(
+                                Modifier.width(76.dp).clickable { onCollection(Collection.Pet(p.id, p.name)) },
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                            ) {
+                                AsyncImage(p.coverId?.let(::thumbUrl), p.name, contentScale = ContentScale.Crop,
+                                    modifier = Modifier.size(72.dp).clip(CircleShape))
+                                Text(p.name, style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis,
                                     modifier = Modifier.padding(top = 4.dp))
                             }
                         }

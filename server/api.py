@@ -29,7 +29,7 @@ from metadata import media_mime, safe_join, visible_dir
 from ml import CLIP_MODEL_ID  # constante seulement : importer ml ne charge aucun modèle
 from tasks import (DSN, REDIS_URL, IMPORT_EXCLUDE, IMPORT_ROOT, PHOTOS_DIR, QUARANTINE_DIR, embed_query, import_folder, ingest,
                    part_path, thumb_path, MEMORY_VIDEO_DIR, queue_memory_video)
-from tasks import enhance as enhance_task
+from tasks import enhance as enhance_task, refresh_pet_media
 from util import decode_cursor, encode_cursor, hash_password, parse_content_range, verify_password
 
 JWT_SECRET = os.environ["JWT_SECRET"]
@@ -93,8 +93,23 @@ def ready(fam: Family, shared: bool = True, m: str = "m") -> str:
     """Filtre SQL « médias visibles » ; paramètre %(fam)s requis. shared=False : écriture (pas les médias partagés)."""
     own = f"{m}.owner_id = ANY(%(fam)s)"
     if shared and fam.restricted:  # fam.uid : UUID issu du jeton, sûr à insérer dans la requête
-        own = f"({own} OR can_view('{fam.uid}'::uuid, {m}.id, {m}.owner_id, {m}.taken_at))"
+        own = (f"({own} OR can_view('{fam.uid}'::uuid, {m}.id, {m}.owner_id, {m}.taken_at) "
+               f"OR {m}.id IN ({FAMILY_SHARED.format(uid=fam.uid)}))")
     return f"{own} AND {m}.status = 'ready' AND {m}.deleted_at IS NULL"
+
+
+# Onglet Famille vu par uid : photos partagées une à une, plus toutes celles des personnes partagées (visages),
+# par lui ou un membre de sa famille. FAMILY_ROWS : (media_id, added, shared_by) ; FAMILY_SHARED : media_id seuls.
+_IN_FAMILY = "(s.id = '{uid}'::uuid OR s.family_id = (SELECT family_id FROM users WHERE id = '{uid}'::uuid))"
+FAMILY_ROWS = ("SELECT fs.media_id, fs.created_at AS added, fs.shared_by FROM family_shared fs "
+               f"JOIN users s ON s.id = fs.shared_by WHERE {_IN_FAMILY} "
+               "UNION ALL SELECT f.media_id, greatest(fp.created_at, fm.created_at), fp.added_by FROM family_share_people fp "
+               "JOIN faces f ON f.person_id = fp.person_id JOIN media fm ON fm.id = f.media_id "
+               f"JOIN users s ON s.id = fp.added_by WHERE {_IN_FAMILY} "
+               "UNION ALL SELECT pm.media_id, greatest(fsp.created_at, pmm.created_at), fsp.added_by FROM family_share_pets fsp "
+               "JOIN pet_media pm ON pm.pet_id = fsp.pet_id JOIN media pmm ON pmm.id = pm.media_id "
+               f"JOIN users s ON s.id = fsp.added_by WHERE {_IN_FAMILY}")
+FAMILY_SHARED = "SELECT media_id FROM (" + FAMILY_ROWS + ") fr"
 
 
 def require_admin(fam: Family) -> None:
@@ -376,7 +391,7 @@ MEDIA_COLS = "m.id, encode(m.sha256, 'hex') AS sha256, m.kind, m.mime_type, m.ta
 
 @app.get("/api/v1/media/timeline")
 def timeline(fam: Fam, cursor: str | None = None, limit: int = Query(200, ge=1, le=500)):
-    params = {"fam": fam, "limit": limit}
+    params = {"fam": fam, "limit": limit, "me": fam.uid}
     after = ""
     if cursor:
         try:
@@ -386,7 +401,8 @@ def timeline(fam: Fam, cursor: str | None = None, limit: int = Query(200, ge=1, 
         after = "AND (m.taken_at, m.id) < (%(ts)s, %(cid)s)"
     with pool.connection() as c:
         rows = c.execute(
-            f"SELECT {MEDIA_COLS} FROM media m WHERE {ready(fam)} "
+            # Onglet Photos = mes photos seulement ; celles des autres : onglet Famille, recherche, personnes, albums
+            f"SELECT {MEDIA_COLS} FROM media m WHERE {ready(fam)} AND m.owner_id = %(me)s "
             f"{after} ORDER BY m.taken_at DESC, m.id DESC LIMIT %(limit)s",
             params).fetchall()
     last = rows[-1] if len(rows) == limit else None
@@ -427,7 +443,7 @@ def list_categories(fam: Fam):
 
 
 @app.get("/api/v1/media/query")
-def media_query(fam: Fam, person_id: UUID | None = None, album_id: UUID | None = None,
+def media_query(fam: Fam, person_id: UUID | None = None, album_id: UUID | None = None, pet_id: UUID | None = None,
                 city: str | None = None, country_code: str | None = None, tag: str | None = None,
                 limit: int = Query(500, ge=1, le=2000)):
     """Contenu d'une personne, d'un album ou d'un lieu."""
@@ -440,6 +456,9 @@ def media_query(fam: Fam, person_id: UUID | None = None, album_id: UUID | None =
         conds.append("EXISTS (SELECT 1 FROM album_media am JOIN albums a ON a.id = am.album_id "
                      "WHERE am.media_id = m.id AND a.id = %(album)s AND a.owner_id = ANY(%(fam)s))")
         params["album"] = album_id
+    if pet_id:
+        conds.append(f"m.id IN ({PET_MEDIA})")
+        params["pet"] = pet_id
     if city:
         conds.append("m.city = %(city)s AND m.country_code IS NOT DISTINCT FROM %(cc)s")
         params |= {"city": city, "cc": country_code}
@@ -448,7 +467,7 @@ def media_query(fam: Fam, person_id: UUID | None = None, album_id: UUID | None =
                      "WHERE mt.media_id = m.id AND t.name = %(tag)s)")
         params["tag"] = tag
     if not conds:
-        raise HTTPException(400, "filtre requis : person_id, album_id, city ou tag")
+        raise HTTPException(400, "filtre requis : person_id, album_id, pet_id, city ou tag")
     # shortcut: pas de curseur (2000 max) ; paginer comme la timeline si une collection dépasse ça.
     with pool.connection() as c:
         rows = c.execute(f"SELECT {MEDIA_COLS} FROM media m WHERE {ready(fam)} AND {' AND '.join(conds)} "
@@ -463,6 +482,139 @@ def media_recent(fam: Fam, limit: int = Query(300, ge=1, le=1000)):
         rows = c.execute(f"SELECT {MEDIA_COLS}, m.created_at FROM media m WHERE {ready(fam)} "
                          "ORDER BY m.created_at DESC LIMIT %(limit)s", {"fam": fam, "limit": limit}).fetchall()
     return {"items": rows}
+
+
+@app.get("/api/v1/family/media")
+def family_media(fam: Fam, limit: int = Query(5000, ge=1, le=10000)):
+    """Onglet Famille : photos partagées par les membres, les derniers ajouts d'abord."""
+    with pool.connection() as c:
+        rows = c.execute(
+            "SELECT * FROM (SELECT DISTINCT ON (m.id) " + MEDIA_COLS + ", x.added AS created_at, x.shared_by "
+            f"FROM ({FAMILY_ROWS.format(uid=fam.uid)}) x JOIN media m ON m.id = x.media_id "
+            "WHERE m.status = 'ready' AND m.deleted_at IS NULL ORDER BY m.id, x.added) t "
+            # shortcut: pas de curseur (10 000 max) ; paginer comme la timeline si Famille dépasse ça
+            "ORDER BY taken_at DESC LIMIT %(limit)s", {"limit": limit}).fetchall()
+    return {"items": rows}
+
+
+class PersonReq(BaseModel):
+    person_id: UUID
+
+
+@app.get("/api/v1/family/people")
+def family_people(fam: Fam):
+    """Personnes dont toutes les photos apparaissent dans Famille."""
+    with pool.connection() as c:
+        rows = c.execute("SELECT fp.person_id FROM family_share_people fp JOIN users s ON s.id = fp.added_by "
+                         f"WHERE {_IN_FAMILY.format(uid=fam.uid)}").fetchall()
+        pets = c.execute("SELECT fp.pet_id FROM family_share_pets fp JOIN users s ON s.id = fp.added_by "
+                         f"WHERE {_IN_FAMILY.format(uid=fam.uid)}").fetchall()
+    return {"person_ids": [r["person_id"] for r in rows], "pet_ids": [r["pet_id"] for r in pets]}
+
+
+class PetIdReq(BaseModel):
+    pet_id: UUID
+
+
+@app.post("/api/v1/family/pets")
+def family_pets_add(body: PetIdReq, fam: Fam):
+    """Animal partagé : toutes ses photos, y compris les futures, apparaissent dans Famille."""
+    with pool.connection() as c:
+        n = c.execute("INSERT INTO family_share_pets (pet_id, added_by) SELECT id, %s FROM pets "
+                      "WHERE id = %s AND owner_id = ANY(%s) ON CONFLICT DO NOTHING", (fam.uid, body.pet_id, fam)).rowcount
+    return {"added": n}
+
+
+@app.delete("/api/v1/family/pets/{pet_id}")
+def family_pets_remove(pet_id: UUID, fam: Fam):
+    """Retrait : celui qui a partagé l'animal, ou l'administrateur."""
+    with pool.connection() as c:
+        n = c.execute("DELETE FROM family_share_pets fp USING users s WHERE s.id = fp.added_by AND fp.pet_id = %(p)s "
+                      f"AND {_IN_FAMILY.format(uid=fam.uid)} AND (fp.added_by = %(me)s OR %(admin)s)",
+                      {"p": pet_id, "me": fam.uid, "admin": fam.admin}).rowcount
+    return {"removed": n}
+
+
+@app.post("/api/v1/family/people")
+def family_people_add(body: PersonReq, fam: Fam):
+    with pool.connection() as c:
+        n = c.execute("INSERT INTO family_share_people (person_id, added_by) SELECT id, %s FROM people "
+                      "WHERE id = %s AND owner_id = ANY(%s) ON CONFLICT DO NOTHING", (fam.uid, body.person_id, fam)).rowcount
+    return {"added": n}
+
+
+@app.delete("/api/v1/family/people/{person_id}")
+def family_people_remove(person_id: UUID, fam: Fam):
+    """Retrait : celui qui a ajouté la personne, ou l'administrateur."""
+    with pool.connection() as c:
+        n = c.execute("DELETE FROM family_share_people fp USING users s WHERE s.id = fp.added_by AND fp.person_id = %(p)s "
+                      f"AND {_IN_FAMILY.format(uid=fam.uid)} AND (fp.added_by = %(me)s OR %(admin)s)",
+                      {"p": person_id, "me": fam.uid, "admin": fam.admin}).rowcount
+    return {"removed": n}
+
+
+@app.post("/api/v1/family/media")
+def family_add(body: Ids, fam: Fam):
+    """Chacun peut partager ce qu'il voit (ses photos ou celles de la famille)."""
+    with pool.connection() as c:
+        n = c.execute(f"INSERT INTO family_shared (media_id, shared_by) SELECT m.id, %(me)s FROM media m "
+                      f"WHERE m.id = ANY(%(ids)s) AND {ready(fam)} ON CONFLICT DO NOTHING",
+                      {"fam": fam, "me": fam.uid, "ids": body.ids}).rowcount
+    return {"added": n}
+
+
+@app.post("/api/v1/family/media/remove")
+def family_remove(body: Ids, fam: Fam):
+    """Retrait : celui qui a partagé, ou l'administrateur."""
+    with pool.connection() as c:
+        n = c.execute(f"DELETE FROM family_shared WHERE media_id = ANY(%(ids)s) "
+                      f"AND media_id IN ({FAMILY_SHARED.format(uid=fam.uid)}) AND (shared_by = %(me)s OR %(admin)s)",
+                      {"ids": body.ids, "me": fam.uid, "admin": fam.admin}).rowcount
+    return {"removed": n}
+
+
+# ---------- Animaux nommés (photos retrouvées par tasks.refresh_pet_media) ----------
+PET_MEDIA = "SELECT media_id FROM pet_media WHERE pet_id = %(pet)s"
+
+
+class PetReq(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    ids: list[UUID] = Field(min_length=1, max_length=50)
+
+
+@app.get("/api/v1/pets")
+def list_pets(fam: Fam):
+    with pool.connection() as c:
+        pets = c.execute("SELECT id, name, examples[1] AS cover_id FROM pets WHERE owner_id = ANY(%s) ORDER BY name",
+                         (fam,)).fetchall()
+    return {"pets": pets}
+
+
+@app.post("/api/v1/pets")
+def name_pet(body: PetReq, fam: Fam):
+    """Nomme un animal à partir de photos ; même nom dans la famille = exemples ajoutés au même animal."""
+    name = body.name.strip()
+    with pool.connection() as c:
+        ids = [r["id"] for r in c.execute(f"SELECT m.id FROM media m WHERE m.id = ANY(%(ids)s) AND {ready(fam)}",
+                                          {"ids": body.ids, "fam": fam}).fetchall()]
+        if not ids:
+            raise HTTPException(404, "photos introuvables")
+        row = c.execute("UPDATE pets SET examples = (SELECT array_agg(DISTINCT x) FROM unnest(examples || %s::uuid[]) x) "
+                        "WHERE owner_id = ANY(%s) AND lower(name) = lower(%s) RETURNING id, name", (ids, fam, name)).fetchone()
+        if row is None:
+            row = c.execute("INSERT INTO pets (owner_id, name, examples) VALUES (%s, %s, %s) RETURNING id, name",
+                            (fam.uid, name, ids)).fetchone()
+        refresh_pet_media(c, row["id"])
+    return row
+
+
+@app.delete("/api/v1/pets/{pet_id}")
+def delete_pet(pet_id: UUID, fam: Fam):
+    with pool.connection() as c:
+        n = c.execute("DELETE FROM pets WHERE id = %s AND owner_id = ANY(%s)", (pet_id, fam)).rowcount
+    if not n:
+        raise HTTPException(404, "animal introuvable")
+    return {"deleted": n}
 
 
 class EnhanceReq(BaseModel):
@@ -523,11 +675,15 @@ def _duplicate_groups(c, fam) -> list[dict]:
         return []
     rows = {r["id"]: r for r in c.execute(
         f"SELECT {MEDIA_COLS}, m.sharpness FROM media m WHERE m.id = ANY(%s)", (ids,)).fetchall()}
+    kept = {r["media_id"] for r in c.execute(
+        "SELECT media_id FROM cleanup_kept WHERE kind = 'duplicates' AND media_id = ANY(%s)", (ids,)).fetchall()}
+    # Série déjà triée (tout gardé) : masquée ; une nouvelle photo similaire la refait apparaître, les gardées décochées
+    live = [g for g in groups.values() if not kept.issuperset(g)]
     out = []
-    for n, members in enumerate(sorted(groups.values(), key=lambda g: rows[g[0]]["taken_at"], reverse=True)):
+    for n, members in enumerate(sorted(live, key=lambda g: rows[g[0]]["taken_at"], reverse=True)):
         keep = max(members, key=lambda i: (rows[i]["sharpness"] or 0, rows[i]["width"] or 0))
         for i in sorted(members, key=lambda i: rows[i]["taken_at"]):
-            out.append({**rows[i], "group": n, "suggested": i != keep})
+            out.append({**rows[i], "group": n, "suggested": i != keep and i not in kept})
     return out
 
 
@@ -565,8 +721,21 @@ def cleanup(kind: Literal["duplicates", "blurry", "dark", "screenshots", "words"
                    f"JOIN media m ON m.id = e.media_id WHERE {ready(fam, shared=False)} AND e.model = %(model)s "
                    "AND 1 - (e.embedding <=> %(v)s) >= %(min)s ORDER BY e.embedding <=> %(v)s")
             p |= {"v": vec, "model": CLIP_MODEL_ID, "min": WORDS_MIN_SCORE}
+        if kind != "words":  # « par mots » dépend de la phrase : rien n'est mémorisé
+            sql = sql.replace(" ORDER BY", " AND NOT EXISTS (SELECT 1 FROM cleanup_kept k WHERE k.media_id = m.id "
+                              "AND k.kind = %(kind)s) ORDER BY", 1)
+            p["kind"] = kind
         rows = c.execute(sql + " LIMIT 500", p).fetchall()
     return {"items": [{**r, "suggested": True} for r in rows]}
+
+
+@app.post("/api/v1/cleanup/{kind}/keep")
+def cleanup_keep(kind: Literal["duplicates", "blurry", "dark", "screenshots"], body: Ids, fam: Fam):
+    """Photos décochées : gardées, elles ne sont plus proposées pour ce critère."""
+    with pool.connection() as c:
+        n = c.execute("INSERT INTO cleanup_kept (media_id, kind) SELECT id, %s FROM media "
+                      "WHERE owner_id = ANY(%s) AND id = ANY(%s) ON CONFLICT DO NOTHING", (kind, fam, body.ids)).rowcount
+    return {"kept": n}
 
 
 @app.get("/api/v1/trash")

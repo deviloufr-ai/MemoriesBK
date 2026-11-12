@@ -32,6 +32,19 @@ import androidx.compose.material.icons.outlined.CleaningServices
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.BatteryChargingFull
 import androidx.compose.material.icons.outlined.CloudSync
+import androidx.compose.material.icons.outlined.GroupRemove
+import androidx.compose.material.icons.outlined.PersonAdd
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.TextButton
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.outlined.Groups
+import androidx.compose.material3.IconButton
+import androidx.activity.compose.BackHandler
 import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Wifi
@@ -66,51 +79,110 @@ import coil.compose.AsyncImage
 import java.time.LocalDate
 import java.time.OffsetDateTime
 
-/** Récents : ce qui attend encore la sauvegarde, puis les derniers ajouts au serveur, par jour d'ajout. */
+/** Famille : photos partagées par les membres, rangées comme l'onglet Photos (jours, mois, années). Appui long : sélection. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun RecentTab(vm: GalleryViewModel, onOpen: (List<GridItem>, Int) -> Unit) {
-    val recent by vm.recent.collectAsState()
-    val pending by vm.notBackedUp.collectAsState()
-    LaunchedEffect(Unit) { vm.loadRecent() }
-    val context = LocalContext.current
-    val pendingHeader = stringResource(R.string.pending_backup_header, pending.size)
+fun FamilyTab(vm: GalleryViewModel, onOpen: (List<GridItem>, Int) -> Unit) {
+    val shared by vm.familyMedia.collectAsState()
+    val zoom by vm.zoom.collectAsState()
+    val mosaic by vm.mosaic.collectAsState()
+    LaunchedEffect(Unit) { vm.loadFamilyMedia() }
+    var selected by remember(shared) { mutableStateOf(emptySet<String>()) }
+    var pickPeople by remember { mutableStateOf(false) }
+    BackHandler(selected.isNotEmpty()) { selected = emptySet() }
+    if (pickPeople) FamilyPeopleDialog(vm) { pickPeople = false }
 
-    val rows = remember(recent, pending) {
-        buildList {
-            if (pending.isNotEmpty()) {
-                add(GridRow.Header(pendingHeader, LocalDate.now()))
-                pending.forEach { add(GridRow.Cell(it)) }
-            }
-            var current: String? = null
-            recent.orEmpty().forEach { item ->
-                val label = addedLabel(context, item.addedAt)
-                if (label != current) { add(GridRow.Header(label, item.takenAt.toLocalDate())); current = label }
-                add(GridRow.Cell(item))
-            }
-        }
+    val rows = remember(shared, zoom, mosaic) {
+        sections(shared.orEmpty().sortedByDescending { it.takenAt }, zoom, mosaic = mosaic && zoom == Zoom.DAY)
     }
+    val anchors = remember(rows) { monthAnchors(rows) }
     val cells = remember(rows) { rows.mapNotNull { (it as? GridRow.Cell)?.item } }
+    val gridState = rememberLazyGridState()
+    val scope = rememberCoroutineScope()
+    val currentIndex by remember(anchors) {
+        derivedStateOf { anchors.indexOfLast { it.second <= gridState.firstVisibleItemIndex }.coerceAtLeast(0) }
+    }
+    fun jumpTo(index: Int) { scope.launch { gridState.scrollToItem(anchors[index].second) } }
+    val toggle = { item: GridItem -> selected = if (item.key in selected) selected - item.key else selected + item.key }
 
-    Scaffold(contentWindowInsets = WindowInsets(0), topBar = { TopAppBar(title = { Text(stringResource(R.string.tab_recent)) }) }) { padding ->
+    Scaffold(contentWindowInsets = WindowInsets(0), topBar = {
+        Column {
+            TopAppBar(
+                title = {
+                    if (selected.isNotEmpty()) Text(selected.size.toString())
+                    else Column {
+                        Text(stringResource(R.string.tab_family), style = MaterialTheme.typography.labelMedium)
+                        YearPicker(anchors.getOrNull(currentIndex)?.first?.year, anchors.map { it.first.year }.distinct()) { year ->
+                            jumpTo(anchors.indexOfFirst { it.first.year == year })
+                        }
+                    }
+                },
+                actions = {
+                    if (selected.isNotEmpty()) IconButton(onClick = { vm.removeFromFamily(cells.filter { it.key in selected }) }) {
+                        Icon(Icons.Outlined.GroupRemove, stringResource(R.string.remove_from_family))
+                    } else IconButton(onClick = { pickPeople = true }) {
+                        Icon(Icons.Outlined.PersonAdd, stringResource(R.string.family_by_face))
+                    }
+                },
+            )
+            if (selected.isEmpty()) MonthTabs(anchors, currentIndex, ::jumpTo)
+        }
+    }) { padding ->
         when {
-            recent == null && pending.isEmpty() -> Text(stringResource(R.string.loading), Modifier.padding(padding).padding(24.dp))
-            rows.isEmpty() -> EmptyState(Modifier.padding(padding), Icons.Outlined.CloudSync, stringResource(R.string.nothing_recent),
-                stringResource(R.string.nothing_recent_text))
-            else -> PhotoGrid(rows, 3, rememberLazyGridState(), Modifier.padding(padding),
-                onClick = { onOpen(cells, cells.indexOf(it)) })
+            shared == null -> Text(stringResource(R.string.loading), Modifier.padding(padding).padding(24.dp))
+            rows.isEmpty() -> EmptyState(Modifier.padding(padding), Icons.Outlined.Groups, stringResource(R.string.family_empty),
+                stringResource(R.string.family_empty_text))
+            else -> PhotoGrid(rows, zoom.columns, gridState,
+                Modifier.padding(padding).pinchToZoom(
+                    onSpread = { vm.zoom.value = zoom.larger() },
+                    onPinch = { vm.zoom.value = zoom.smaller() },
+                ).horizontalSwipe(anchors) { dir -> (currentIndex - dir).takeIf { it in anchors.indices }?.let(::jumpTo) },
+                selected = selected,
+                onClick = { if (selected.isNotEmpty()) toggle(it) else onOpen(cells, cells.indexOf(it)) },
+                onLongClick = toggle)
         }
     }
 }
 
-private fun addedLabel(context: Context, addedAt: LocalDate?): String {
-    val today = LocalDate.now()
-    return when (addedAt) {
-        null -> context.getString(R.string.added_older)
-        today -> context.getString(R.string.added_today)
-        today.minusDays(1) -> context.getString(R.string.added_yesterday)
-        else -> context.getString(R.string.added_on, addedAt.format(localizedFormatter("MMMMdEEEE")))
-    }
+/** Personnes partagées avec la famille : cocher = toutes leurs photos, actuelles et futures, dans Famille. */
+@Composable
+private fun FamilyPeopleDialog(vm: GalleryViewModel, onDismiss: () -> Unit) {
+    val people by vm.people.collectAsState()
+    val pets by vm.pets.collectAsState()
+    val chosen by vm.familyPeople.collectAsState()
+    val chosenPets by vm.familyPets.collectAsState()
+    LaunchedEffect(Unit) { vm.loadExplore() }
+    val unnamed = stringResource(R.string.unnamed)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.family_by_face)) },
+        text = {
+            Column {
+                Text(stringResource(R.string.family_by_face_help), style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(bottom = 8.dp))
+                LazyColumn(Modifier.heightIn(max = 360.dp)) {
+                    items(pets, key = { "pet-" + it.id }) { p ->
+                        ListItem(
+                            modifier = Modifier.clickable { vm.toggleFamilyPet(p.id) },
+                            leadingContent = { AsyncImage(p.coverId?.let(::thumbUrl), null, Modifier.size(40.dp).clip(CircleShape), contentScale = ContentScale.Crop) },
+                            headlineContent = { Text(p.name) },
+                            supportingContent = { Text(stringResource(R.string.section_pets)) },
+                            trailingContent = { Checkbox(p.id in chosenPets, { vm.toggleFamilyPet(p.id) }) },
+                        )
+                    }
+                    items(people, key = { it.id }) { p ->
+                        ListItem(
+                            modifier = Modifier.clickable { vm.toggleFamilyPerson(p.id) },
+                            leadingContent = { AsyncImage(faceUrl(p.coverFaceId), null, Modifier.size(40.dp).clip(CircleShape)) },
+                            headlineContent = { Text(p.name ?: unnamed) },
+                            trailingContent = { Checkbox(p.id in chosen, { vm.toggleFamilyPerson(p.id) }) },
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.ok)) } },
+    )
 }
 
 /** Souvenirs : « Il y a N ans » cette semaine, en grandes cartes. */
@@ -299,6 +371,3 @@ fun EmptyState(modifier: Modifier, icon: ImageVector, title: String, text: Strin
     }
 }
 
-/** Date d'ajout au serveur (Récents), en heure locale du téléphone. */
-val GridItem.addedAt: LocalDate?
-    get() = createdAt?.let { runCatching { OffsetDateTime.parse(it).atZoneSameInstant(java.time.ZoneId.systemDefault()).toLocalDate() }.getOrNull() }

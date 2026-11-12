@@ -65,7 +65,9 @@ fun CollectionScreen(
     onRenamed: (Collection) -> Unit,
 ) {
     val scope = rememberCoroutineScope()
-    val items by produceState<List<GridItem>?>(null, collection) { value = vm.collection(collection) }
+    // trashVersion : une photo supprimée depuis la visionneuse disparaît aussi de la liste
+    val version by vm.trashVersion.collectAsState()
+    val items by produceState<List<GridItem>?>(null, collection, version) { value = vm.collection(collection) }
     var renaming by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf(false) }
     val unnamed = stringResource(R.string.unnamed)
@@ -78,7 +80,7 @@ fun CollectionScreen(
                 title = { Text(if (collection is Collection.Category) categoryLabel(collection.title) else collection.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 actions = {
                     if (collection is Collection.Person) IconButton(onClick = { renaming = true }) { Icon(Icons.Outlined.Edit, stringResource(R.string.name_person)) }
-                    if (collection is Collection.Album) IconButton(onClick = { deleting = true }) { Icon(Icons.Outlined.Delete, stringResource(R.string.delete_album)) }
+                    if (collection is Collection.Album || collection is Collection.Pet) IconButton(onClick = { deleting = true }) { Icon(Icons.Outlined.Delete, stringResource(R.string.delete_album)) }
                 },
             )
         },
@@ -102,6 +104,15 @@ fun CollectionScreen(
                 vm.renamePerson(collection.id, name)?.let { id -> onRenamed(Collection.Person(id, name.ifBlank { unnamed })) }
             }
         }
+    }
+    if (deleting && collection is Collection.Pet) {
+        AlertDialog(
+            onDismissRequest = { deleting = false },
+            title = { Text(stringResource(R.string.delete_pet_title, collection.title)) },
+            text = { Text(stringResource(R.string.delete_pet_text)) },
+            confirmButton = { TextButton(onClick = { deleting = false; vm.deletePet(collection.id); onBack() }) { Text(stringResource(R.string.delete)) } },
+            dismissButton = { TextButton(onClick = { deleting = false }) { Text(stringResource(R.string.cancel)) } },
+        )
     }
     if (deleting && collection is Collection.Album) {
         AlertDialog(

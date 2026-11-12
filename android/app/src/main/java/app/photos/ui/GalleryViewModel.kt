@@ -60,7 +60,10 @@ class GalleryViewModel @Inject constructor(
     val syncSettings: StateFlow<SyncSettings?> = settings.flow.stateIn(viewModelScope, SharingStarted.Eagerly, null)
     val zoom = MutableStateFlow(Zoom.DAY)
     val mosaic = MutableStateFlow(true)
-    val recent = MutableStateFlow<List<GridItem>?>(null)
+    val familyMedia = MutableStateFlow<List<GridItem>?>(null)
+    val familyPeople = MutableStateFlow<Set<String>>(emptySet())
+    val familyPets = MutableStateFlow<Set<String>>(emptySet())
+    val pets = MutableStateFlow<List<app.photos.data.Pet>>(emptyList())
     val error = MutableStateFlow<String?>(null)
     val searchQuery = MutableStateFlow("") // survit aux changements d'onglet, comme les résultats
     val searchResults = MutableStateFlow<List<GridItem>?>(null) // null = pas de recherche en cours
@@ -94,10 +97,6 @@ class GalleryViewModel @Inject constructor(
     /** (mois, index de sa première ligne) pour le sélecteur d'année et les onglets de mois. */
     val anchors = rows.map(::monthAnchors).flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
-
-    /** Éléments du téléphone pas encore sur le serveur, en tête de l'onglet Récents. */
-    val notBackedUp = local.map { list -> list.filter { it.state != SyncState.SYNCED }.map(::localItem) }
-        .flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val backup: StateFlow<BackupStatus?> = local.map(::backupStatus).flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
@@ -182,14 +181,52 @@ class GalleryViewModel @Inject constructor(
 
     fun loadExplore() = viewModelScope.launch {
         call { api.people() }?.let { people.value = it.people }
+        call { api.pets() }?.let { pets.value = it.pets }
         call { api.places() }?.let { places.value = it.places }
         call { api.categories() }?.let { categories.value = it.categories }
     }
 
-    fun loadRecent() = viewModelScope.launch { call { api.recent() }?.let { r -> recent.value = r.items.map(::remoteItem) } }
+    fun loadFamilyMedia() = viewModelScope.launch {
+        call { api.familyMedia() }?.let { r -> familyMedia.value = r.items.map(::remoteItem) }
+        call { api.familyPeople() }?.let { familyPeople.value = it.personIds.toSet(); familyPets.value = it.petIds.toSet() }
+    }
+
+    /** Animal partagé : toutes ses photos, y compris les futures, apparaissent dans Famille. */
+    fun toggleFamilyPet(petId: String) = viewModelScope.launch {
+        if (petId in familyPets.value) call { api.familyPetsRemove(petId) }
+        else call { api.familyPetsAdd(app.photos.data.PetIdReq(petId)) }
+        loadFamilyMedia()
+    }
+
+    /** Par visage : toutes les photos de la personne, y compris les futures, apparaissent dans Famille. */
+    fun toggleFamilyPerson(personId: String) = viewModelScope.launch {
+        if (personId in familyPeople.value) call { api.familyPeopleRemove(personId) }
+        else call { api.familyPeopleAdd(app.photos.data.PersonReq(personId)) }
+        loadFamilyMedia()
+    }
+
+    /** Onglet Famille : chacun partage ce qu'il veut ; seuls les éléments déjà sauvegardés peuvent l'être. */
+    fun shareToFamily(items: List<GridItem>) = viewModelScope.launch {
+        val ids = items.mapNotNull { it.remoteId }
+        val added = ids.chunked(500).sumOf { batch -> call { api.familyAdd(IdsReq(batch)) }?.added ?: 0 }
+        error.value = context.resources.getQuantityString(R.plurals.items_shared_family, added, added)
+        loadFamilyMedia()
+    }
+
+    /** Le serveur ne retire que ce que l'utilisateur a lui-même partagé (ou tout, pour l'administrateur). */
+    fun removeFromFamily(items: List<GridItem>) = viewModelScope.launch {
+        items.mapNotNull { it.remoteId }.chunked(500).forEach { batch -> call { api.familyRemove(IdsReq(batch)) } }
+        loadFamilyMedia()
+    }
 
     suspend fun cleanup(kind: String, query: String?): List<Pair<GridItem, Boolean>> =
         call { api.cleanup(kind, query) }?.items?.map { remoteItem(it) to it.suggested } ?: emptyList()
+
+    /** Photos décochées au nettoyage : le serveur ne les proposera plus pour ce critère. */
+    fun keepCleanup(kind: String, items: List<GridItem>) = viewModelScope.launch {
+        items.mapNotNull { it.remoteId }.chunked(500).forEach { batch -> call { api.cleanupKeep(kind, IdsReq(batch)) } }
+        trashVersion.update { it + 1 }
+    }
 
     suspend fun trashList(): List<GridItem> = call { api.trashList() }?.items?.map(::remoteItem) ?: emptyList()
 
@@ -254,6 +291,7 @@ class GalleryViewModel @Inject constructor(
             is Collection.Place -> api.query(city = c.city, countryCode = c.countryCode)
             is Collection.Album -> api.query(albumId = c.id)
             is Collection.Category -> api.query(tag = c.title)
+            is Collection.Pet -> api.query(petId = c.id)
         }
     }?.items?.map(::remoteItem) ?: emptyList()
 
@@ -265,6 +303,8 @@ class GalleryViewModel @Inject constructor(
         if (ids.isEmpty()) return@launch
         ids.chunked(500).forEach { batch -> call { api.trash(IdsReq(batch)) } }
         remote.update { list -> list.filter { it.id !in ids } }
+        familyMedia.update { list -> list?.filter { it.remoteId !in ids } }
+        searchResults.update { list -> list?.filter { it.remoteId !in ids } }
         trashVersion.update { it + 1 }
         memories.update { list -> list.map { m -> m.copy(items = m.items.filter { it.remoteId !in ids }) }.filter { it.items.isNotEmpty() } }
     }
@@ -282,6 +322,20 @@ class GalleryViewModel @Inject constructor(
         call { api.createAlbum(AlbumCreate(title.trim(), items.mapNotNull { it.remoteId })) }
             ?.let { error.value = context.getString(R.string.album_created, title.trim()) }
         loadAlbums()
+    }
+
+    /** Animal nommé à partir de photos d'exemple ; un nom déjà utilisé ajoute ces photos au même animal. */
+    fun namePet(name: String, items: List<GridItem>) = viewModelScope.launch {
+        val ids = items.mapNotNull { it.remoteId }.take(50)
+        if (ids.isEmpty()) return@launch
+        call { api.namePet(app.photos.data.PetCreate(name.trim(), ids)) }
+            ?.let { error.value = context.getString(R.string.pet_named, it.name) }
+        call { api.pets() }?.let { pets.value = it.pets }
+    }
+
+    fun deletePet(petId: String) = viewModelScope.launch {
+        call { api.deletePet(petId) }
+        call { api.pets() }?.let { pets.value = it.pets }
     }
 
     fun deleteAlbum(albumId: String) = viewModelScope.launch {

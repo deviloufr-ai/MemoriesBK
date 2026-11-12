@@ -539,6 +539,29 @@ def _gate_on_start(**_):
         pass
 
 
+# Animaux nommés : pas de modèle de reconnaissance individuelle en local ; on garde les photos « Animaux » qui
+# ressemblent (CLIP) à une photo d'exemple. Seuil calibré sur un teckel réel : 0.72 = encore lui, 0.70 = un écureuil.
+PET_MIN_SIM = float(os.environ.get("PET_MIN_SIM", "0.78"))
+
+
+def refresh_pet_media(conn, pet_id=None) -> None:
+    """Recalcule pet_media (tous les animaux, ou un seul) : ~0.2 s par photo d'exemple."""
+    from ml import CLIP_MODEL_ID
+
+    p = {"pet": pet_id, "model": CLIP_MODEL_ID, "sim": PET_MIN_SIM}
+    conn.execute("DELETE FROM pet_media WHERE %(pet)s::uuid IS NULL OR pet_id = %(pet)s", p)
+    conn.execute(
+        "INSERT INTO pet_media (pet_id, media_id) "
+        "SELECT p.id, ex FROM pets p, unnest(p.examples) ex WHERE %(pet)s::uuid IS NULL OR p.id = %(pet)s "
+        "UNION SELECT p.id, a.media_id FROM pets p "
+        "JOIN embeddings x ON x.media_id = ANY(p.examples) AND x.model = %(model)s "
+        # OFFSET 0 : d'abord les ~1500 photos « Animaux », puis les distances (sinon toute la table embeddings)
+        "JOIN (SELECT e.media_id, e.embedding FROM tags t JOIN media_tags mt ON mt.tag_id = t.id AND mt.source = 'clip' "
+        "      JOIN embeddings e ON e.media_id = mt.media_id AND e.model = %(model)s WHERE t.name = 'Animaux' OFFSET 0) a "
+        "  ON 1 - (a.embedding <=> x.embedding) >= %(sim)s "
+        "WHERE %(pet)s::uuid IS NULL OR p.id = %(pet)s ON CONFLICT DO NOTHING", p)
+
+
 @app.task
 def housekeeping():
     """Purge les uploads abandonnés ; relance les ingests et les analyses jamais abouties (crash, Redis down)."""
@@ -555,6 +578,7 @@ def housekeeping():
         # 1 h > durée max des retries d'ingest (~15 min) : ces médias ne sont plus en cours de traitement
         stuck = conn.execute("SELECT id FROM media WHERE status = 'quarantined' "
                              "AND created_at < now() - interval '1 hour'").fetchall()
+        refresh_pet_media(conn)  # nouvelles photos de chaque animal nommé
     for row in expired:
         part_path(row["id"]).unlink(missing_ok=True)
     # Une seule relance toutes les 6 h par média : sinon, file engorgée, chaque passage (15 min) ajoutait des doublons

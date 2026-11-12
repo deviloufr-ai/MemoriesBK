@@ -56,6 +56,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
+import java.time.YearMonth
 import java.time.format.TextStyle
 import java.util.Locale
 
@@ -132,21 +133,7 @@ fun PhotosTab(
                         IconButton(onClick = onSearch) { Icon(Icons.Outlined.Search, stringResource(R.string.search)) }
                     },
                 )
-                // Onglets des mois de l'année affichée : un toucher saute au mois
-                val year = current?.year
-                val months = anchors.withIndex().filter { it.value.first.year == year }
-                if (months.size > 1) {
-                    val selectedTab = months.indexOfFirst { it.index == currentIndex }.coerceAtLeast(0)
-                    PrimaryScrollableTabRow(selectedTabIndex = selectedTab, edgePadding = 12.dp) {
-                        months.forEachIndexed { i, m ->
-                            Tab(
-                                selected = i == selectedTab,
-                                onClick = { jumpTo(m.index) },
-                                text = { Text(m.value.first.month.getDisplayName(TextStyle.SHORT, Locale.getDefault()).replaceFirstChar(Char::uppercase)) },
-                            )
-                        }
-                    }
-                }
+                MonthTabs(anchors, currentIndex, ::jumpTo)
             }
         },
     ) { padding ->
@@ -168,8 +155,27 @@ fun PhotosTab(
     }
 }
 
+/** Onglets des mois de l'année affichée : un toucher saute au mois. */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun YearPicker(year: Int?, years: List<Int>, onPick: (Int) -> Unit) {
+fun MonthTabs(anchors: List<Pair<YearMonth, Int>>, currentIndex: Int, jumpTo: (Int) -> Unit) {
+    val year = anchors.getOrNull(currentIndex)?.first?.year
+    val months = anchors.withIndex().filter { it.value.first.year == year }
+    if (months.size <= 1) return
+    val selectedTab = months.indexOfFirst { it.index == currentIndex }.coerceAtLeast(0)
+    PrimaryScrollableTabRow(selectedTabIndex = selectedTab, edgePadding = 12.dp) {
+        months.forEachIndexed { i, m ->
+            Tab(
+                selected = i == selectedTab,
+                onClick = { jumpTo(m.index) },
+                text = { Text(m.value.first.month.getDisplayName(TextStyle.SHORT, Locale.getDefault()).replaceFirstChar(Char::uppercase)) },
+            )
+        }
+    }
+}
+
+@Composable
+fun YearPicker(year: Int?, years: List<Int>, onPick: (Int) -> Unit) {
     var open by remember { mutableStateOf(false) }
     Box {
         TextButton(onClick = { open = true }, enabled = years.size > 1, contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)) {

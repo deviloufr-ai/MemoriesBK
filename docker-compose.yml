@@ -59,6 +59,11 @@ services:
       - ./db/migrations/007_media_name_idx.sql:/docker-entrypoint-initdb.d/07-media-name-idx.sql:ro
       - ./db/migrations/008_social.sql:/docker-entrypoint-initdb.d/08-social.sql:ro
       - ./db/migrations/009_share_rules.sql:/docker-entrypoint-initdb.d/09-share-rules.sql:ro
+      - ./db/migrations/010_cleanup_kept.sql:/docker-entrypoint-initdb.d/10-cleanup-kept.sql:ro
+      - ./db/migrations/011_family_shared.sql:/docker-entrypoint-initdb.d/11-family-shared.sql:ro
+      - ./db/migrations/012_family_share_people.sql:/docker-entrypoint-initdb.d/12-family-share-people.sql:ro
+      - ./db/migrations/013_pets.sql:/docker-entrypoint-initdb.d/13-pets.sql:ro
+      - ./db/migrations/014_pet_media.sql:/docker-entrypoint-initdb.d/14-pet-media.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U photos -d photos"]
       interval: 5s

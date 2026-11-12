@@ -70,6 +70,7 @@ sealed interface Collection {
     data class Place(val city: String, val countryCode: String?) : Collection { override val title = city }
     data class Album(val id: String, override val title: String) : Collection
     data class Category(override val title: String) : Collection
+    data class Pet(val id: String, override val title: String) : Collection
 }
 
 /** Catégories IA : le serveur renvoie le libellé français, qui reste la clé des requêtes. */

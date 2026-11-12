@@ -2,7 +2,7 @@
 <resources>
     <!-- Onglets -->
     <string name="tab_photos">写真</string>
-    <string name="tab_recent">最近</string>
+    <string name="tab_family">家族</string>
     <string name="tab_memories">思い出</string>
     <string name="tab_explore">検索</string>
     <string name="tab_manage">管理</string>
@@ -118,6 +118,7 @@
     <string name="analyzing">分析中…</string>
     <string name="cleanup_words_empty">削除したい写真の内容を入力してください</string>
     <string name="cleanup_nothing">整理するものはありません</string>
+    <string name="keep_all">すべて残す</string>
     <string name="cleanup_words_empty_text">検索はサーバー上の AI で行われます。分析済みの写真のみが対象です。</string>
     <string name="cleanup_nothing_text">分析中の写真は後で表示されます。</string>
     <string name="restore_count">復元（%1$d）</string>
@@ -204,8 +205,24 @@
 
     <!-- Récents et Souvenirs -->
     <string name="pending_backup_header">バックアップ待ち（%1$d）</string>
-    <string name="nothing_recent">最近の項目はありません</string>
-    <string name="nothing_recent_text">スマートフォン、ウェブ版、NAS から追加した写真がここに表示されます。</string>
+    <string name="family_empty">まだ共有された写真はありません</string>
+    <string name="family_empty_text">写真を選択し、「アルバムに追加」から「家族」を選ぶと、家族全員がここで見られます。</string>
+    <string name="share_family_hint">家族全員に表示されます</string>
+    <string name="remove_from_family">家族から外す</string>
+    <string name="family_by_face">人やペットを追加</string>
+    <string name="section_pets">ペット</string>
+    <string name="my_pet">マイペット</string>
+    <string name="my_pet_hint">犬や猫に名前を付ける</string>
+    <string name="my_pet_help">これらの写真を見本にして、ほかの写真も自動で見つけます。既存のペットを選ぶか、新しい名前を入力してください。</string>
+    <string name="pet_name">ペットの名前</string>
+    <string name="pet_confirm">名前を付ける</string>
+    <string name="pet_named">「%1$s」の写真が「探す」に表示されます</string>
+    <string name="delete_pet_title">「%1$s」を削除しますか？</string>
+    <string name="delete_pet_text">名前だけが削除され、写真は残ります。</string>
+    <string name="family_by_face_help">チェックした人やペットの写真は、今後の写真も含めてすべて「家族」に表示されます。</string>
+    <plurals name="items_shared_family">
+        <item quantity="other">%d 件を家族と共有しました</item>
+    </plurals>
     <string name="added_older">それ以前</string>
     <string name="added_today">今日追加</string>
     <string name="added_yesterday">昨日追加</string>
