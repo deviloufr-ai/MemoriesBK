@@ -25,6 +25,7 @@ from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 from pydantic import BaseModel, Field
 
+import migrate
 from metadata import media_mime, safe_join, visible_dir
 from ml import CLIP_MODEL_ID  # constante seulement : importer ml ne charge aucun modèle
 from tasks import (DSN, REDIS_URL, IMPORT_EXCLUDE, IMPORT_ROOT, PHOTOS_DIR, QUARANTINE_DIR, embed_query, import_folder, ingest,
@@ -37,10 +38,32 @@ TOKEN_TTL = timedelta(days=int(os.environ.get("TOKEN_TTL_DAYS", "90")))
 CHUNK_MAX = 64 * 2**20
 MAX_UPLOAD = int(os.environ.get("MAX_UPLOAD_BYTES", str(50 * 2**30)))
 
+migrate.run(DSN)  # avant le pool : les requêtes voient le schéma à jour
 pool = ConnectionPool(DSN, kwargs={"autocommit": True, "row_factory": dict_row},
                       configure=register_vector, max_size=10, open=True)
 QUARANTINE_DIR.mkdir(parents=True, exist_ok=True)
 app = FastAPI(title="MemoriesBK API", version="1")
+_rev = Path(__file__).with_name("REVISION")
+REVISION = _rev.read_text().strip() if _rev.exists() else "dev"  # écrit par deploy.sh
+
+
+@app.get("/api/v1/health")
+def health():
+    """Sans authentification : base et Redis joignables, version déployée (pour deploy.sh et la surveillance)."""
+    status = {"revision": REVISION}
+    try:
+        with pool.connection(timeout=5) as c:
+            c.execute("SELECT 1")
+        status["db"] = True
+    except Exception:
+        status["db"] = False
+    try:
+        status["redis"] = bool(_redis.ping())
+    except Exception:
+        status["redis"] = False
+    if not (status["db"] and status["redis"]):
+        raise HTTPException(503, status)
+    return status
 
 # ---------- Auth ----------
 # shortcut: un seul jeton longue durée, pas de refresh/révocation ; ajouter une table de sessions si besoin.

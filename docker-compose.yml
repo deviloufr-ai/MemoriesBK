@@ -31,6 +31,7 @@ x-server: &server
     - ${IMPORT_HOST_DIR:-./data/import}:/import:ro   # sources d'import parcourables depuis la page web
     - models:/root/.cache                 # poids CLIP (Hugging Face)
     - insightface:/root/.insightface      # poids buffalo_l
+    - ./db/migrations:/migrations:ro      # appliquées au démarrage de l'API (server/migrate.py)
   depends_on:
     postgres: { condition: service_healthy }
     redis: { condition: service_healthy }
@@ -49,22 +50,8 @@ services:
     volumes:
       # Disque local (SSD), jamais sur NFS/SMB : PostgreSQL y perd ses garanties d'écriture
       - ${PG_HOST_DIR:-./data/postgres}:/var/lib/postgresql/data
-      # appliqués au 1er démarrage seulement ; sur une base existante : psql -f db/migrations/<fichier>.sql
+      # schéma de base au 1er démarrage ; les migrations (db/migrations) sont appliquées par l'API (server/migrate.py)
       - ./db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
-      - ./db/migrations/002_import_jobs.sql:/docker-entrypoint-initdb.d/02-import-jobs.sql:ro
-      - ./db/migrations/003_family_ai.sql:/docker-entrypoint-initdb.d/03-family-ai.sql:ro
-      - ./db/migrations/004_quality.sql:/docker-entrypoint-initdb.d/04-quality.sql:ro
-      - ./db/migrations/005_face_manual.sql:/docker-entrypoint-initdb.d/05-face-manual.sql:ro
-      - ./db/migrations/006_memory_videos.sql:/docker-entrypoint-initdb.d/06-memory-videos.sql:ro
-      - ./db/migrations/007_media_name_idx.sql:/docker-entrypoint-initdb.d/07-media-name-idx.sql:ro
-      - ./db/migrations/008_social.sql:/docker-entrypoint-initdb.d/08-social.sql:ro
-      - ./db/migrations/009_share_rules.sql:/docker-entrypoint-initdb.d/09-share-rules.sql:ro
-      - ./db/migrations/010_cleanup_kept.sql:/docker-entrypoint-initdb.d/10-cleanup-kept.sql:ro
-      - ./db/migrations/011_family_shared.sql:/docker-entrypoint-initdb.d/11-family-shared.sql:ro
-      - ./db/migrations/012_family_share_people.sql:/docker-entrypoint-initdb.d/12-family-share-people.sql:ro
-      - ./db/migrations/013_pets.sql:/docker-entrypoint-initdb.d/13-pets.sql:ro
-      - ./db/migrations/014_pet_media.sql:/docker-entrypoint-initdb.d/14-pet-media.sql:ro
-      - ./db/migrations/015_family_from_year.sql:/docker-entrypoint-initdb.d/15-family-from-year.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U photos -d photos"]
       interval: 5s

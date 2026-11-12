@@ -6,6 +6,7 @@ keystore.properties
 # APK compilés (distribués par le serveur, pas par git)
 *.apk
 server/web/MemoriesBK.version
+server/REVISION
 
 # Données locales et caches
 /data/
