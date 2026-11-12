@@ -151,6 +151,21 @@ private fun FamilyPeopleDialog(vm: GalleryViewModel, onDismiss: () -> Unit) {
     val pets by vm.pets.collectAsState()
     val chosen by vm.familyPeople.collectAsState()
     val chosenPets by vm.familyPets.collectAsState()
+    val fromYears by vm.familyFromYears.collectAsState()
+    var editingYear by remember { mutableStateOf<Pair<String, Boolean>?>(null) }  // (id, animal ?)
+    editingYear?.let { (id, isPet) ->
+        TextPromptDialog(stringResource(R.string.family_from_year_title), stringResource(R.string.family_from_year_label),
+            fromYears[id]?.toString() ?: "", onDismiss = { editingYear = null }) { text ->
+            editingYear = null
+            vm.setFamilyFromYear(id, isPet, text.trim().toIntOrNull()?.takeIf { it in 1900..2100 })
+        }
+    }
+    @Composable
+    fun yearLine(id: String, isPet: Boolean) = Text(
+        fromYears[id]?.let { stringResource(R.string.family_from_year, it) } ?: stringResource(R.string.family_all_years),
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.clickable { editingYear = id to isPet }.padding(vertical = 4.dp),
+    )
     LaunchedEffect(Unit) { vm.loadExplore() }
     val unnamed = stringResource(R.string.unnamed)
     AlertDialog(
@@ -166,7 +181,7 @@ private fun FamilyPeopleDialog(vm: GalleryViewModel, onDismiss: () -> Unit) {
                             modifier = Modifier.clickable { vm.toggleFamilyPet(p.id) },
                             leadingContent = { AsyncImage(p.coverId?.let(::thumbUrl), null, Modifier.size(40.dp).clip(CircleShape), contentScale = ContentScale.Crop) },
                             headlineContent = { Text(p.name) },
-                            supportingContent = { Text(stringResource(R.string.section_pets)) },
+                            supportingContent = { if (p.id in chosenPets) yearLine(p.id, true) else Text(stringResource(R.string.section_pets)) },
                             trailingContent = { Checkbox(p.id in chosenPets, { vm.toggleFamilyPet(p.id) }) },
                         )
                     }
@@ -175,6 +190,7 @@ private fun FamilyPeopleDialog(vm: GalleryViewModel, onDismiss: () -> Unit) {
                             modifier = Modifier.clickable { vm.toggleFamilyPerson(p.id) },
                             leadingContent = { AsyncImage(faceUrl(p.coverFaceId), null, Modifier.size(40.dp).clip(CircleShape)) },
                             headlineContent = { Text(p.name ?: unnamed) },
+                            supportingContent = if (p.id in chosen) ({ yearLine(p.id, false) }) else null,
                             trailingContent = { Checkbox(p.id in chosen, { vm.toggleFamilyPerson(p.id) }) },
                         )
                     }

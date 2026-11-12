@@ -219,12 +219,13 @@ data class ShareRule(
 @Serializable data class FamilyPeopleRes(
     @SerialName("person_ids") val personIds: List<String>,
     @SerialName("pet_ids") val petIds: List<String> = emptyList(),
+    @SerialName("from_years") val fromYears: Map<String, Int> = emptyMap(),
 )
-@Serializable data class PetIdReq(@SerialName("pet_id") val petId: String)
+@Serializable data class PetIdReq(@SerialName("pet_id") val petId: String, @SerialName("from_year") val fromYear: Int? = null)
 @Serializable data class Pet(val id: String, val name: String, @SerialName("cover_id") val coverId: String? = null)
 @Serializable data class PetsRes(val pets: List<Pet>)
 @Serializable data class PetCreate(val name: String, val ids: List<String>)
-@Serializable data class PersonReq(@SerialName("person_id") val personId: String)
+@Serializable data class PersonReq(@SerialName("person_id") val personId: String, @SerialName("from_year") val fromYear: Int? = null)
 
 @Serializable
 data class MediaDetails(

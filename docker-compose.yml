@@ -64,6 +64,7 @@ services:
       - ./db/migrations/012_family_share_people.sql:/docker-entrypoint-initdb.d/12-family-share-people.sql:ro
       - ./db/migrations/013_pets.sql:/docker-entrypoint-initdb.d/13-pets.sql:ro
       - ./db/migrations/014_pet_media.sql:/docker-entrypoint-initdb.d/14-pet-media.sql:ro
+      - ./db/migrations/015_family_from_year.sql:/docker-entrypoint-initdb.d/15-family-from-year.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U photos -d photos"]
       interval: 5s

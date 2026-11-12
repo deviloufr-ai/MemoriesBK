@@ -63,6 +63,7 @@ class GalleryViewModel @Inject constructor(
     val familyMedia = MutableStateFlow<List<GridItem>?>(null)
     val familyPeople = MutableStateFlow<Set<String>>(emptySet())
     val familyPets = MutableStateFlow<Set<String>>(emptySet())
+    val familyFromYears = MutableStateFlow<Map<String, Int>>(emptyMap())
     val pets = MutableStateFlow<List<app.photos.data.Pet>>(emptyList())
     val error = MutableStateFlow<String?>(null)
     val searchQuery = MutableStateFlow("") // survit aux changements d'onglet, comme les résultats
@@ -188,7 +189,16 @@ class GalleryViewModel @Inject constructor(
 
     fun loadFamilyMedia() = viewModelScope.launch {
         call { api.familyMedia() }?.let { r -> familyMedia.value = r.items.map(::remoteItem) }
-        call { api.familyPeople() }?.let { familyPeople.value = it.personIds.toSet(); familyPets.value = it.petIds.toSet() }
+        call { api.familyPeople() }?.let {
+            familyPeople.value = it.personIds.toSet(); familyPets.value = it.petIds.toSet(); familyFromYears.value = it.fromYears
+        }
+    }
+
+    /** Personne ou animal déjà coché : seulement ses photos à partir de [year] (null = toutes les années). */
+    fun setFamilyFromYear(id: String, isPet: Boolean, year: Int?) = viewModelScope.launch {
+        if (isPet) call { api.familyPetsAdd(app.photos.data.PetIdReq(id, year)) }
+        else call { api.familyPeopleAdd(app.photos.data.PersonReq(id, year)) }
+        loadFamilyMedia()
     }
 
     /** Animal partagé : toutes ses photos, y compris les futures, apparaissent dans Famille. */

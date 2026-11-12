@@ -51,9 +51,42 @@ write_files:
       OnUnitActiveSec=2min
       [Install]
       WantedBy=timers.target
+  # Sauvegarde de la base (noms, familles, albums, partages : rien de tout ça n'est sur le NAS) : chaque nuit, 14 jours.
+  # Restauration : docker compose exec -T postgres pg_restore -U photos -d photos --clean --if-exists < fichier.dump
+  - path: /usr/local/bin/photos-backup
+    permissions: "0755"
+    content: |
+      #!/bin/sh
+      set -e
+      D=/mnt/nas/photos-app/backups
+      F="$D/memoriesbk-$(date +%F).dump"
+      mkdir -p "$D"
+      cd /home/freebox/photos
+      docker compose exec -T postgres pg_dump -U photos -Fc photos > "$F.tmp"
+      docker compose exec -T postgres pg_restore --list < "$F.tmp" >/dev/null  # fichier relisible, sinon échec
+      mv "$F.tmp" "$F"
+      ls -1t "$D"/memoriesbk-*.dump | tail -n +15 | xargs -r rm --
+      logger -t photos-backup "ok $F $(du -h "$F" | cut -f1)"
+  - path: /etc/systemd/system/photos-backup.service
+    content: |
+      [Unit]
+      Description=Sauvegarde de la base MemoriesBK vers le NAS
+      After=docker.service mnt-nas.mount
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/local/bin/photos-backup
+  - path: /etc/systemd/system/photos-backup.timer
+    content: |
+      [Unit]
+      Description=Sauvegarde de la base chaque nuit
+      [Timer]
+      OnCalendar=*-*-* 03:30
+      Persistent=true
+      [Install]
+      WantedBy=timers.target
 
 runcmd:
-  - systemctl daemon-reload && systemctl enable --now net-watchdog.timer
+  - systemctl daemon-reload && systemctl enable --now net-watchdog.timer photos-backup.timer
   - curl -fsSL https://get.docker.com | sh
   - usermod -aG docker freebox
   - systemctl enable --now docker

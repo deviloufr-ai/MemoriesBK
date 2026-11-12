@@ -220,6 +220,10 @@
     <string name="remove_from_family">Retirer de Famille</string>
     <string name="family_by_face">Ajouter une personne ou un animal</string>
     <string name="section_pets">Animaux</string>
+    <string name="family_all_years">Toutes les années · modifier</string>
+    <string name="family_from_year">Depuis %1$d · modifier</string>
+    <string name="family_from_year_title">À partir de quelle année ?</string>
+    <string name="family_from_year_label">Année (vide = toutes)</string>
     <string name="my_pet">Mon animal</string>
     <string name="my_pet_hint">Donner un nom à ton chien, ton chat…</string>
     <string name="my_pet_help">Ces photos servent d\'exemples : ses autres photos sont retrouvées automatiquement. Choisis un animal existant ou donne un nouveau nom.</string>

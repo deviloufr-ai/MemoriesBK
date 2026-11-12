@@ -211,6 +211,10 @@
     <string name="remove_from_family">家族から外す</string>
     <string name="family_by_face">人やペットを追加</string>
     <string name="section_pets">ペット</string>
+    <string name="family_all_years">すべての年 · 変更</string>
+    <string name="family_from_year">%1$d 年以降 · 変更</string>
+    <string name="family_from_year_title">何年以降の写真にしますか？</string>
+    <string name="family_from_year_label">年（空欄 = すべて）</string>
     <string name="my_pet">マイペット</string>
     <string name="my_pet_hint">犬や猫に名前を付ける</string>
     <string name="my_pet_help">これらの写真を見本にして、ほかの写真も自動で見つけます。既存のペットを選ぶか、新しい名前を入力してください。</string>

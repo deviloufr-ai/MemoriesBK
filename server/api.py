@@ -106,9 +106,11 @@ FAMILY_ROWS = ("SELECT fs.media_id, fs.created_at AS added, fs.shared_by FROM fa
                "UNION ALL SELECT f.media_id, greatest(fp.created_at, fm.created_at), fp.added_by FROM family_share_people fp "
                "JOIN faces f ON f.person_id = fp.person_id JOIN media fm ON fm.id = f.media_id "
                f"JOIN users s ON s.id = fp.added_by WHERE {_IN_FAMILY} "
+               "AND (fp.from_year IS NULL OR fm.taken_at >= make_date(fp.from_year, 1, 1)) "
                "UNION ALL SELECT pm.media_id, greatest(fsp.created_at, pmm.created_at), fsp.added_by FROM family_share_pets fsp "
                "JOIN pet_media pm ON pm.pet_id = fsp.pet_id JOIN media pmm ON pmm.id = pm.media_id "
-               f"JOIN users s ON s.id = fsp.added_by WHERE {_IN_FAMILY}")
+               f"JOIN users s ON s.id = fsp.added_by WHERE {_IN_FAMILY} "
+               "AND (fsp.from_year IS NULL OR pmm.taken_at >= make_date(fsp.from_year, 1, 1))")
 FAMILY_SHARED = "SELECT media_id FROM (" + FAMILY_ROWS + ") fr"
 
 
@@ -445,7 +447,7 @@ def list_categories(fam: Fam):
 @app.get("/api/v1/media/query")
 def media_query(fam: Fam, person_id: UUID | None = None, album_id: UUID | None = None, pet_id: UUID | None = None,
                 city: str | None = None, country_code: str | None = None, tag: str | None = None,
-                limit: int = Query(500, ge=1, le=2000)):
+                limit: int = Query(10000, ge=1, le=10000)):
     """Contenu d'une personne, d'un album ou d'un lieu."""
     params: dict = {"fam": fam, "limit": limit}
     conds = []
@@ -468,7 +470,7 @@ def media_query(fam: Fam, person_id: UUID | None = None, album_id: UUID | None =
         params["tag"] = tag
     if not conds:
         raise HTTPException(400, "filtre requis : person_id, album_id, pet_id, city ou tag")
-    # shortcut: pas de curseur (2000 max) ; paginer comme la timeline si une collection dépasse ça.
+    # shortcut: pas de curseur (10 000 max) ; paginer comme la timeline si une collection dépasse ça.
     with pool.connection() as c:
         rows = c.execute(f"SELECT {MEDIA_COLS} FROM media m WHERE {ready(fam)} AND {' AND '.join(conds)} "
                          "ORDER BY m.taken_at DESC LIMIT %(limit)s", params).fetchall()
@@ -485,43 +487,49 @@ def media_recent(fam: Fam, limit: int = Query(300, ge=1, le=1000)):
 
 
 @app.get("/api/v1/family/media")
-def family_media(fam: Fam, limit: int = Query(5000, ge=1, le=10000)):
+def family_media(fam: Fam, limit: int = Query(30000, ge=1, le=30000)):
     """Onglet Famille : photos partagées par les membres, les derniers ajouts d'abord."""
     with pool.connection() as c:
         rows = c.execute(
             "SELECT * FROM (SELECT DISTINCT ON (m.id) " + MEDIA_COLS + ", x.added AS created_at, x.shared_by "
             f"FROM ({FAMILY_ROWS.format(uid=fam.uid)}) x JOIN media m ON m.id = x.media_id "
             "WHERE m.status = 'ready' AND m.deleted_at IS NULL ORDER BY m.id, x.added) t "
-            # shortcut: pas de curseur (10 000 max) ; paginer comme la timeline si Famille dépasse ça
+            # shortcut: pas de curseur (30 000 max, ~7 Mo) ; paginer comme la timeline si Famille dépasse ça
             "ORDER BY taken_at DESC LIMIT %(limit)s", {"limit": limit}).fetchall()
     return {"items": rows}
 
 
 class PersonReq(BaseModel):
     person_id: UUID
+    from_year: int | None = Field(None, ge=1900, le=2100)  # seulement ses photos à partir de cette année
 
 
 @app.get("/api/v1/family/people")
 def family_people(fam: Fam):
     """Personnes dont toutes les photos apparaissent dans Famille."""
     with pool.connection() as c:
-        rows = c.execute("SELECT fp.person_id FROM family_share_people fp JOIN users s ON s.id = fp.added_by "
+        rows = c.execute("SELECT fp.person_id, fp.from_year FROM family_share_people fp JOIN users s ON s.id = fp.added_by "
                          f"WHERE {_IN_FAMILY.format(uid=fam.uid)}").fetchall()
-        pets = c.execute("SELECT fp.pet_id FROM family_share_pets fp JOIN users s ON s.id = fp.added_by "
+        pets = c.execute("SELECT fp.pet_id, fp.from_year FROM family_share_pets fp JOIN users s ON s.id = fp.added_by "
                          f"WHERE {_IN_FAMILY.format(uid=fam.uid)}").fetchall()
-    return {"person_ids": [r["person_id"] for r in rows], "pet_ids": [r["pet_id"] for r in pets]}
+    years = {str(r["person_id"]): r["from_year"] for r in rows if r["from_year"]}
+    years |= {str(r["pet_id"]): r["from_year"] for r in pets if r["from_year"]}
+    return {"person_ids": [r["person_id"] for r in rows], "pet_ids": [r["pet_id"] for r in pets], "from_years": years}
 
 
 class PetIdReq(BaseModel):
     pet_id: UUID
+    from_year: int | None = Field(None, ge=1900, le=2100)
 
 
 @app.post("/api/v1/family/pets")
 def family_pets_add(body: PetIdReq, fam: Fam):
     """Animal partagé : toutes ses photos, y compris les futures, apparaissent dans Famille."""
     with pool.connection() as c:
-        n = c.execute("INSERT INTO family_share_pets (pet_id, added_by) SELECT id, %s FROM pets "
-                      "WHERE id = %s AND owner_id = ANY(%s) ON CONFLICT DO NOTHING", (fam.uid, body.pet_id, fam)).rowcount
+        # Déjà partagé : on change seulement l'année de départ
+        n = c.execute("INSERT INTO family_share_pets (pet_id, added_by, from_year) SELECT id, %s, %s FROM pets "
+                      "WHERE id = %s AND owner_id = ANY(%s) ON CONFLICT (pet_id) DO UPDATE SET from_year = EXCLUDED.from_year",
+                      (fam.uid, body.from_year, body.pet_id, fam)).rowcount
     return {"added": n}
 
 
@@ -538,8 +546,10 @@ def family_pets_remove(pet_id: UUID, fam: Fam):
 @app.post("/api/v1/family/people")
 def family_people_add(body: PersonReq, fam: Fam):
     with pool.connection() as c:
-        n = c.execute("INSERT INTO family_share_people (person_id, added_by) SELECT id, %s FROM people "
-                      "WHERE id = %s AND owner_id = ANY(%s) ON CONFLICT DO NOTHING", (fam.uid, body.person_id, fam)).rowcount
+        # Déjà partagée : on change seulement l'année de départ
+        n = c.execute("INSERT INTO family_share_people (person_id, added_by, from_year) SELECT id, %s, %s FROM people "
+                      "WHERE id = %s AND owner_id = ANY(%s) ON CONFLICT (person_id) DO UPDATE SET from_year = EXCLUDED.from_year",
+                      (fam.uid, body.from_year, body.person_id, fam)).rowcount
     return {"added": n}
 
 
