@@ -218,6 +218,11 @@
     <string name="my_pet">マイペット</string>
     <string name="share_to_family">家族と共有</string>
     <string name="undo">元に戻す</string>
+    <string name="offline_banner">サーバーに接続できません · 自動で再試行します</string>
+    <string name="welcome_title">MemoriesBK へようこそ</string>
+    <string name="welcome_text">• 写真：自分の写真（スマホと NAS）、自動でバックアップ。\n• 家族：みんなが共有した写真（手動・人・ペットごと）。\n• 思い出：N 年前と、毎月のビデオ。\n• 探す：キーワード検索、人、ペット、場所。\n• 管理：バックアップ、整理、確認待ち、ゴミ箱。</string>
+    <string name="whats_new_title">新機能</string>
+    <string name="whats_new_text">• 選択バー：家族、アルバム、ペット、共有、削除。\n• 顔：情報に顔のサムネイル、確認付きの統合、人のページで複数選択して修正。\n• 管理 › 確認待ち：はい/いいえで顔とペットを修正。\n• 削除や修正のあとに「元に戻す」。\n• 人のページと家族：年・月で移動、家族に誰が共有されているか表示。</string>
     <string name="family_since_short">%1$d 年以降</string>
     <string name="family_all_years_plain">すべての年</string>
     <plurals name="items_trashed">

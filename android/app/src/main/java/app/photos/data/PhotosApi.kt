@@ -97,6 +97,9 @@ interface PhotosApi {
     @GET("api/v1/people")
     suspend fun people(): PeopleRes
 
+    @GET("api/v1/health")
+    suspend fun health(): Response<Unit>
+
     @POST("api/v1/people/{id}/merge")
     suspend fun mergePerson(@Path("id") personId: String, @Body body: MergeReq): PersonPatchRes
 

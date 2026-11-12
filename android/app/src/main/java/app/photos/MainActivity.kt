@@ -65,6 +65,7 @@ import app.photos.ui.GridItem
 import app.photos.ui.ManageTab
 import app.photos.ui.MemoriesTab
 import app.photos.ui.FamilyTab
+import app.photos.ui.WelcomeOrWhatsNew
 import app.photos.ui.LoginScreen
 import app.photos.ui.PhotosTab
 import app.photos.ui.ViewerScreen
@@ -142,6 +143,10 @@ class MainActivity : ComponentActivity() {
             vm.loadFamily()
         }
         LaunchedEffect(error) { error?.let { snackbar.showSnackbar(it); vm.error.value = null } }
+        val offline by vm.offline.collectAsState()
+        LaunchedEffect(offline) {
+            while (offline) { kotlinx.coroutines.delay(10_000); vm.pingServer() }
+        }
         val undo by vm.undo.collectAsState()
         val undoLabel = stringResource(R.string.undo)
         LaunchedEffect(undo) {
@@ -167,6 +172,7 @@ class MainActivity : ComponentActivity() {
         Box {
             // Composé en premier = priorité la plus basse : visionneuse, sélection, recherche… gèrent « retour » avant.
             UpdateChecker(okHttp) { vm.error.value = it }
+            WelcomeOrWhatsNew()
             var confirmExit by remember { mutableStateOf(false) }
             BackHandler { if (tab != 0) tab = 0 else confirmExit = true }
             if (confirmExit) androidx.compose.material3.AlertDialog(
@@ -182,6 +188,7 @@ class MainActivity : ComponentActivity() {
             Scaffold(
                 contentWindowInsets = WindowInsets(0),
                 snackbarHost = { SnackbarHost(snackbar) },
+                topBar = { if (offline) app.photos.ui.OfflineBanner() },
                 bottomBar = {
                     if (selected.isEmpty()) NavigationBar {
                         TABS.forEachIndexed { i, t ->

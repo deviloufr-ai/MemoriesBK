@@ -38,6 +38,35 @@ private fun get(okHttp: OkHttpClient, path: String) =
         if (!it.isSuccessful) { it.close(); throw IOException("HTTP ${it.code}") }
     }
 
+/**
+ * Premier lancement : présentation des onglets. Après une mise à jour : les nouveautés, une seule fois.
+ * Mémorisé localement (dernière version vue) ; rien n'est envoyé au serveur.
+ */
+@Composable
+fun WelcomeOrWhatsNew() {
+    val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences("ui", Context.MODE_PRIVATE) }
+    val installed = remember { installedVersion(context) }
+    val seen = remember { prefs.getLong("seen_version", -1L) }
+    var show by remember { mutableStateOf(seen < installed) }
+    if (!show) return
+    val welcome = seen < 0
+    AlertDialog(
+        onDismissRequest = {},
+        title = { Text(stringResource(if (welcome) R.string.welcome_title else R.string.whats_new_title)) },
+        // Premier lancement de cette fonction : aussi les nouveautés (les utilisateurs actuels n'ont encore rien « vu »)
+        text = {
+            Text(if (welcome) stringResource(R.string.welcome_text) + "\n\n" + stringResource(R.string.whats_new_text)
+            else stringResource(R.string.whats_new_text))
+        },
+        confirmButton = {
+            TextButton(onClick = { prefs.edit().putLong("seen_version", installed).apply(); show = false }) {
+                Text(stringResource(R.string.ok))
+            }
+        },
+    )
+}
+
 /** Au lancement : si le serveur publie un APK plus récent, propose de l'installer. */
 @Composable
 fun UpdateChecker(okHttp: OkHttpClient, onError: (String) -> Unit) {

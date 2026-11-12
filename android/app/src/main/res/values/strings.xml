@@ -227,6 +227,11 @@
     <string name="my_pet">Mon animal</string>
     <string name="share_to_family">Partager avec la famille</string>
     <string name="undo">Annuler</string>
+    <string name="offline_banner">Serveur injoignable · nouvel essai automatique</string>
+    <string name="welcome_title">Bienvenue dans MemoriesBK</string>
+    <string name="welcome_text">• Photos : tes photos (téléphone et NAS), sauvegardées automatiquement.\n• Famille : ce que chacun choisit de partager, à la main, par personne ou par animal.\n• Souvenirs : il y a N ans, et une vidéo chaque mois.\n• Explorer : recherche par mots, personnes, animaux, lieux.\n• Gérer : sauvegarde, nettoyage, « À vérifier », corbeille.</string>
+    <string name="whats_new_title">Nouveautés</string>
+    <string name="whats_new_text">• Barre de sélection : Famille, Album, Animal, Partager, Supprimer.\n• Visages : vignette de chaque visage dans Infos, fusion avec confirmation, sélection sur la page d\'une personne (« Ce n\'est pas… », « C\'est… »).\n• Gérer › À vérifier : questions oui/non pour corriger visages et animaux.\n• Bouton « Annuler » après une suppression ou une correction.\n• Pages des personnes et Famille : navigation par année et par mois ; Famille montre qui y est partagé.</string>
     <string name="family_since_short">depuis %1$d</string>
     <string name="family_all_years_plain">Toutes les années</string>
     <plurals name="items_trashed">

@@ -106,11 +106,14 @@ class GalleryViewModel @Inject constructor(
     val backup: StateFlow<BackupStatus?> = local.map(::backupStatus).flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
-    /** Appel réseau : les erreurs deviennent un message (snackbar) ; 401 => retour à l'écran de connexion. */
+    /** Hors connexion : bandeau discret en haut (au lieu d'un message à chaque appel raté), retiré dès que ça répond. */
+    val offline = MutableStateFlow(false)
+
+    /** Appel réseau : 401 => retour à l'écran de connexion ; coupure réseau => bandeau « hors connexion ». */
     private suspend fun <T> call(block: suspend () -> T): T? = try {
-        block()
+        block().also { offline.value = false }
     } catch (e: IOException) {
-        error.value = context.getString(R.string.error_unreachable)
+        offline.value = true
         null
     } catch (e: HttpException) {
         when (e.code()) {
@@ -119,6 +122,11 @@ class GalleryViewModel @Inject constructor(
             else -> error.value = context.getString(R.string.error_server, e.code())
         }
         null
+    }
+
+    /** Pendant le bandeau hors connexion : vérifie toutes les 10 s si le serveur répond de nouveau. */
+    suspend fun pingServer() {
+        if (call { api.health() } != null) refresh()
     }
 
     fun loadMore() {
@@ -133,7 +141,7 @@ class GalleryViewModel @Inject constructor(
                     api.timeline(cursor, limit = 500)
                 } catch (e: IOException) {
                     // Serveur injoignable (redémarrage, pas de réseau) : on réessaie seul, sinon l'écran reste vide
-                    if (wait == 2_000L) error.value = context.getString(R.string.error_unreachable) // un seul message
+                    offline.value = true  // bandeau, et on réessaie seul : une coupure brève ne dérange plus
                     delay(wait)
                     wait = (wait * 2).coerceAtMost(60_000)
                     continue
