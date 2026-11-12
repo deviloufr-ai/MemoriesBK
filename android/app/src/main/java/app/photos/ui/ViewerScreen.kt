@@ -30,6 +30,7 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.LibraryAdd
+import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.automirrored.outlined.Comment
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.outlined.FavoriteBorder
@@ -174,6 +175,7 @@ fun ViewerScreen(
                     // Sans clé Gemini sur le serveur : retouche locale directe, sinon choix
                     if (family?.gemini == true) enhancing = current else vm.enhance(current, "auto")
                 }
+                if (current.remoteId != null) ViewerAction(Icons.Outlined.Groups, stringResource(R.string.tab_family)) { vm.shareToFamily(listOf(current)) }
                 ViewerAction(Icons.Outlined.LibraryAdd, stringResource(R.string.album)) { addToAlbum(listOf(current)) }
                 ViewerAction(Icons.Outlined.Delete, stringResource(R.string.delete)) { trash(listOf(current)) }
             }

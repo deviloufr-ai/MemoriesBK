@@ -142,15 +142,15 @@ fun rememberTrashAction(vm: GalleryViewModel, onDone: () -> Unit = {}): (List<Gr
     return { confirm = it }
 }
 
-/** Choix d'un album (ou création) pour les éléments déjà sauvegardés sur le serveur. */
+/** Choix d'un album (ou création) pour les éléments déjà sauvegardés sur le serveur ; [pet] : ouvre directement « Mon animal ». */
 @Composable
-fun rememberAddToAlbum(vm: GalleryViewModel, onDone: () -> Unit = {}): (List<GridItem>) -> Unit {
+fun rememberAddToAlbum(vm: GalleryViewModel, pet: Boolean = false, onDone: () -> Unit = {}): (List<GridItem>) -> Unit {
     var items by remember { mutableStateOf<List<GridItem>?>(null) }
     items?.let { target ->
         val albums by vm.albums.collectAsState()
         val pets by vm.pets.collectAsState()
         var title by remember { mutableStateOf("") }
-        var petMode by remember { mutableStateOf(false) }  // « Mon animal » : ces photos servent d'exemples
+        var petMode by remember { mutableStateOf(pet) }  // « Mon animal » : ces photos servent d'exemples
         LaunchedEffect(Unit) { vm.loadAlbums(); vm.loadExplore() }
         val skipped = target.count { it.remoteId == null }
         AlertDialog(

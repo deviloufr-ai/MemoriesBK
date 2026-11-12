@@ -559,7 +559,9 @@ def refresh_pet_media(conn, pet_id=None) -> None:
         "JOIN (SELECT e.media_id, e.embedding FROM tags t JOIN media_tags mt ON mt.tag_id = t.id AND mt.source = 'clip' "
         "      JOIN embeddings e ON e.media_id = mt.media_id AND e.model = %(model)s WHERE t.name = 'Animaux' OFFSET 0) a "
         "  ON 1 - (a.embedding <=> x.embedding) >= %(sim)s "
-        "WHERE %(pet)s::uuid IS NULL OR p.id = %(pet)s ON CONFLICT DO NOTHING", p)
+        "WHERE (%(pet)s::uuid IS NULL OR p.id = %(pet)s) "
+        "AND NOT EXISTS (SELECT 1 FROM pet_rejects r WHERE r.pet_id = p.id AND r.media_id = a.media_id) "
+        "ON CONFLICT DO NOTHING", p)
 
 
 @app.task

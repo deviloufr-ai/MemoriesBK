@@ -109,6 +109,48 @@ def test_cleanup_keep_hides_photo(fam):
     assert m["blur"] not in {i["id"] for i in api.cleanup("blurry", f["f"]["a"], None)["items"]}
 
 
+def test_merge_requires_confirmation_and_undo(fam):
+    f = fam
+    with api.pool.connection() as c:
+        other = c.execute("INSERT INTO people (owner_id) VALUES (%s) RETURNING id", (f["u"]["a"],)).fetchone()["id"]
+        c.execute("INSERT INTO faces (media_id, owner_id, person_id, bbox, det_score, embedding) "
+                  "VALUES (%s, %s, %s, '{0,0,1,1}', 0.9, %s)", (f["m"]["manual"], f["u"]["a"], other, np.random.rand(512).astype(np.float32)))
+    with pytest.raises(HTTPException) as e:  # même nom : pas de fusion silencieuse
+        api.patch_person(other, api.PersonPatch(name="testkid"), f["f"]["a"])
+    assert e.value.status_code == 409
+    r = api.patch_person(other, api.PersonPatch(name="testkid", merge=True), f["f"]["a"])
+    assert r["merged"] and r["id"] == str(f["person"])
+    names = {p["id"] for p in api.list_people(f["f"]["a"])["people"]}
+    assert other not in names
+    api.undo_face_batch(uuid.UUID(r["batch"]), f["f"]["a"])
+    with api.pool.connection() as c:
+        assert c.execute("SELECT count(*) AS n FROM faces WHERE person_id = %s", (other,)).fetchone()["n"] == 1
+        assert not c.execute("SELECT hidden FROM people WHERE id = %s", (other,)).fetchone()["hidden"]
+
+
+def test_bulk_move_faces_and_undo(fam):
+    f = fam
+    r = api.move_person_faces(f["person"], api.FacesMove(media_ids=[f["m"]["face_old"]], name="Testsibling"), f["f"]["a"])
+    assert r["moved"] == 1
+    kid = {i["id"] for i in api.media_query(f["f"]["a"], person_id=f["person"], limit=100)["items"]}
+    assert f["m"]["face_old"] not in kid
+    api.undo_face_batch(uuid.UUID(r["batch"]), f["f"]["a"])
+    kid = {i["id"] for i in api.media_query(f["f"]["a"], person_id=f["person"], limit=100)["items"]}
+    assert f["m"]["face_old"] in kid
+
+
+def test_review_face_answer(fam):
+    f = fam
+    with api.pool.connection() as c:
+        face = c.execute("SELECT id FROM faces WHERE media_id = %s", (f["m"]["face_new"],)).fetchone()["id"]
+    r = api.review_answer(api.ReviewAnswer(kind="face", subject_id=f["person"], media_id=f["m"]["face_new"],
+                                           face_id=face, yes=False), f["f"]["a"])
+    with api.pool.connection() as c:
+        assert c.execute("SELECT person_id FROM faces WHERE id = %s", (face,)).fetchone()["person_id"] is None
+    api.undo_face_batch(uuid.UUID(r["batch"]), f["f"]["a"])
+    assert api.review_queue(f["f"]["a"], 20) is not None
+
+
 def test_health():
     h = api.health()
     assert h["db"] and h["redis"]

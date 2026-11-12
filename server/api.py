@@ -8,6 +8,7 @@ import sys
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Annotated, Literal
+import uuid
 from uuid import UUID
 
 import celery.exceptions
@@ -891,6 +892,158 @@ def list_people(fam: Fam):
 class PersonPatch(BaseModel):
     name: str | None = Field(None, max_length=100)
     hidden: bool | None = None
+    merge: bool = False  # nom déjà porté par une autre personne : fusionner (sinon 409, l'app demande confirmation)
+
+
+def _move_faces(c, face_ids, to_person, uid, kind, batch=None) -> uuid.UUID:
+    """Déplace des visages (to_person None = retirés) en notant l'état d'avant : annulable par lot."""
+    batch = batch or uuid.uuid4()
+    c.execute("INSERT INTO face_events (batch, kind, face_id, from_person, to_person, from_manual, user_id) "
+              "SELECT %s, %s, f.id, f.person_id, %s, f.manual, %s FROM faces f WHERE f.id = ANY(%s)",
+              (batch, kind, to_person, uid, face_ids))
+    c.execute("UPDATE faces SET person_id = %s, manual = true WHERE id = ANY(%s)", (to_person, face_ids))
+    return batch
+
+
+def _merge_people(c, source, target, uid) -> uuid.UUID:
+    faces = [r["id"] for r in c.execute("SELECT id FROM faces WHERE person_id = %s", (source,)).fetchall()]
+    batch = _move_faces(c, faces, target, uid, "merge")
+    c.execute("INSERT INTO face_events (batch, kind, from_person, to_person, user_id) VALUES (%s, 'merge', %s, %s, %s)",
+              (batch, source, target, uid))
+    c.execute("UPDATE people SET hidden = true, merged_into = %s WHERE id = %s", (target, source))
+    return batch
+
+
+class MergeReq(BaseModel):
+    into: UUID
+
+
+@app.post("/api/v1/people/{person_id}/merge")
+def merge_person(person_id: UUID, body: MergeReq, fam: Fam):
+    """Fusion explicite : la personne disparaît dans `into` ; annulable (POST /face-events/{batch}/undo)."""
+    if person_id == body.into:
+        raise HTTPException(400, "même personne")
+    with pool.connection() as c, c.transaction():
+        n = c.execute("SELECT count(*) AS n FROM people WHERE id IN (%s, %s) AND owner_id = ANY(%s)",
+                      (person_id, body.into, fam)).fetchone()["n"]
+        if n != 2:
+            raise HTTPException(404, "personne introuvable")
+        batch = _merge_people(c, person_id, body.into, fam.uid)
+    return {"id": str(body.into), "merged": True, "batch": str(batch)}
+
+
+class FacesMove(BaseModel):
+    media_ids: list[UUID] = Field(min_length=1, max_length=2000)
+    to_person_id: UUID | None = None
+    name: str | None = Field(None, min_length=1, max_length=100)  # personne de ce nom, créée au besoin
+    # ni l'un ni l'autre : « ce n'est pas elle », les visages sont retirés
+
+
+@app.post("/api/v1/people/{person_id}/faces/move")
+def move_person_faces(person_id: UUID, body: FacesMove, fam: Fam):
+    """Sélection multiple sur la page d'une personne : « Ce n'est pas X » ou « C'est Y » en une fois."""
+    with pool.connection() as c, c.transaction():
+        owner = c.execute("SELECT owner_id FROM people WHERE id = %s AND owner_id = ANY(%s)", (person_id, fam)).fetchone()
+        if owner is None:
+            raise HTTPException(404, "personne introuvable")
+        target = None
+        if body.to_person_id:
+            if not c.execute("SELECT 1 FROM people WHERE id = %s AND owner_id = ANY(%s)", (body.to_person_id, fam)).fetchone():
+                raise HTTPException(404, "personne introuvable")
+            target = body.to_person_id
+        elif body.name and body.name.strip():
+            name = body.name.strip()
+            target = (c.execute("SELECT id FROM people WHERE owner_id = ANY(%s) AND lower(name) = lower(%s) AND NOT hidden LIMIT 1",
+                                (fam, name)).fetchone() or c.execute(
+                "INSERT INTO people (owner_id, name) VALUES (%s, %s) RETURNING id", (owner["owner_id"], name)).fetchone())["id"]
+        faces = [r["id"] for r in c.execute("SELECT id FROM faces WHERE person_id = %s AND media_id = ANY(%s)",
+                                             (person_id, body.media_ids)).fetchall()]
+        if not faces:
+            return {"moved": 0, "batch": None}
+        batch = _move_faces(c, faces, target, fam.uid, "move")
+    return {"moved": len(faces), "batch": str(batch), "to_person_id": str(target) if target else None}
+
+
+@app.post("/api/v1/face-events/{batch}/undo")
+def undo_face_batch(batch: UUID, fam: Fam):
+    """Annule un lot de corrections (fusion, déplacement, réponses « À vérifier »)."""
+    with pool.connection() as c, c.transaction():
+        ev = c.execute("SELECT e.* FROM face_events e JOIN users u ON u.id = e.user_id WHERE e.batch = %s "
+                       "AND e.undone_at IS NULL AND u.id = ANY(%s)", (batch, fam)).fetchall()
+        if not ev:
+            raise HTTPException(404, "rien à annuler")
+        for e in ev:
+            if e["face_id"]:
+                c.execute("UPDATE faces SET person_id = %s, manual = %s WHERE id = %s",
+                          (e["from_person"], e["from_manual"], e["face_id"]))
+            elif e["kind"] == "merge":
+                c.execute("UPDATE people SET hidden = false, merged_into = NULL WHERE id = %s", (e["from_person"],))
+        c.execute("UPDATE face_events SET undone_at = now() WHERE batch = %s", (batch,))
+    return {"undone": len(ev)}
+
+
+# ---------- « À vérifier » : questions oui/non sur les cas douteux ----------
+REVIEW_FACE_MAX_SIM = float(os.environ.get("REVIEW_FACE_MAX_SIM", "0.55"))  # visage peu ressemblant à sa personne
+
+
+@app.get("/api/v1/review")
+def review_queue(fam: Fam, limit: int = Query(20, ge=1, le=100)):
+    """Visages les moins ressemblants à leur personne (nommée), et photos presque reconnues pour chaque animal."""
+    from tasks import PET_MIN_SIM
+
+    with pool.connection() as c:
+        faces = c.execute(
+            "WITH ctr AS (SELECT p.id, p.name, avg(f.embedding) AS v FROM people p JOIN faces f ON f.person_id = p.id "
+            "  WHERE p.owner_id = ANY(%(fam)s) AND p.name IS NOT NULL AND NOT p.hidden GROUP BY p.id) "
+            "SELECT 'face' AS kind, f.id AS face_id, f.media_id, ctr.id AS subject_id, ctr.name, "
+            "  1 - (f.embedding <=> ctr.v) AS sim FROM faces f JOIN ctr ON ctr.id = f.person_id "
+            f"JOIN media m ON m.id = f.media_id WHERE {ready(fam, shared=False)} AND NOT f.manual "
+            "AND 1 - (f.embedding <=> ctr.v) < %(max)s ORDER BY sim LIMIT %(limit)s",
+            {"fam": fam, "max": REVIEW_FACE_MAX_SIM, "limit": limit}).fetchall()
+        pets = c.execute(
+            "SELECT 'pet' AS kind, NULL::uuid AS face_id, a.media_id, p.id AS subject_id, p.name, "
+            "  max(1 - (a.embedding <=> x.embedding)) AS sim FROM pets p "
+            "JOIN embeddings x ON x.media_id = ANY(p.examples) AND x.model = %(model)s "
+            "JOIN (SELECT e.media_id, e.embedding FROM tags t JOIN media_tags mt ON mt.tag_id = t.id AND mt.source = 'clip' "
+            "      JOIN embeddings e ON e.media_id = mt.media_id AND e.model = %(model)s WHERE t.name = 'Animaux' OFFSET 0) a "
+            "  ON 1 - (a.embedding <=> x.embedding) BETWEEN %(lo)s AND %(hi)s "
+            f"JOIN media m ON m.id = a.media_id WHERE p.owner_id = ANY(%(fam)s) AND {ready(fam, shared=False)} "
+            "AND NOT EXISTS (SELECT 1 FROM pet_media pm WHERE pm.pet_id = p.id AND pm.media_id = a.media_id) "
+            "AND NOT EXISTS (SELECT 1 FROM pet_rejects r WHERE r.pet_id = p.id AND r.media_id = a.media_id) "
+            "GROUP BY p.id, p.name, a.media_id ORDER BY sim DESC LIMIT %(limit)s",
+            {"fam": fam, "model": CLIP_MODEL_ID, "lo": PET_MIN_SIM - 0.06, "hi": PET_MIN_SIM, "limit": limit}).fetchall()
+    return {"items": sorted(faces + pets, key=lambda r: r["kind"])[:limit]}
+
+
+class ReviewAnswer(BaseModel):
+    kind: Literal["face", "pet"]
+    subject_id: UUID          # personne ou animal
+    media_id: UUID
+    face_id: UUID | None = None
+    yes: bool
+
+
+@app.post("/api/v1/review")
+def review_answer(body: ReviewAnswer, fam: Fam):
+    with pool.connection() as c, c.transaction():
+        if body.kind == "face":
+            face = c.execute("SELECT f.id FROM faces f WHERE f.id = %s AND f.person_id = %s AND f.owner_id = ANY(%s)",
+                             (body.face_id, body.subject_id, fam)).fetchone()
+            if face is None:
+                raise HTTPException(404, "visage introuvable")
+            # oui : confirmé (manual, plus jamais reposé) ; non : retiré de la personne
+            batch = _move_faces(c, [face["id"]], body.subject_id if body.yes else None, fam.uid, "review")
+            return {"batch": str(batch)}
+        if not c.execute("SELECT 1 FROM pets WHERE id = %s AND owner_id = ANY(%s)", (body.subject_id, fam)).fetchone():
+            raise HTTPException(404, "animal introuvable")
+        if body.yes:  # nouvel exemple : améliore aussi les photos voisines
+            c.execute("UPDATE pets SET examples = array_append(examples, %s) WHERE id = %s AND NOT %s = ANY(examples)",
+                      (body.media_id, body.subject_id, body.media_id))
+            refresh_pet_media(c, body.subject_id)
+        else:
+            c.execute("INSERT INTO pet_rejects (pet_id, media_id) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+                      (body.subject_id, body.media_id))
+    return {"batch": None}
 
 
 @app.patch("/api/v1/people/{person_id}")
@@ -903,14 +1056,19 @@ def patch_person(person_id: UUID, body: PersonPatch, fam: Fam):
     with pool.connection() as c, c.transaction():
         if not c.execute("SELECT 1 FROM people WHERE id = %s AND owner_id = ANY(%s)", (person_id, fam)).fetchone():
             raise HTTPException(404, "personne introuvable")
+        merge = fields.pop("merge", False)
         if fields.get("name"):
-            # Même nom qu'une personne existante = le clustering l'avait coupée en deux : on fusionne
-            twin = c.execute("SELECT id FROM people WHERE owner_id = ANY(%s) AND id <> %s AND lower(name) = lower(%s)",
-                             (fam, person_id, fields["name"])).fetchone()
+            # Même nom qu'une personne existante : fusion seulement si confirmée (une fusion par erreur a mélangé
+            # deux enfants le 12/11) ; sinon 409 et l'app montre les deux personnes avant de demander
+            twin = c.execute("SELECT id FROM people WHERE owner_id = ANY(%s) AND id <> %s AND lower(name) = lower(%s) "
+                             "AND NOT hidden", (fam, person_id, fields["name"])).fetchone()
+            if twin and not merge:
+                raise HTTPException(409, {"twin": str(twin["id"])})
             if twin:
-                c.execute("UPDATE faces SET person_id = %s WHERE person_id = %s", (twin["id"], person_id))
-                c.execute("DELETE FROM people WHERE id = %s", (person_id,))
-                return {"id": str(twin["id"]), "merged": True}
+                batch = _merge_people(c, person_id, twin["id"], fam.uid)
+                return {"id": str(twin["id"]), "merged": True, "batch": str(batch)}
+        if not fields:
+            raise HTTPException(400, "rien à modifier")
         sets = ", ".join(f"{k} = %({k})s" for k in fields)  # clés du modèle pydantic, pas de l'entrée brute
         c.execute(f"UPDATE people SET {sets} WHERE id = %(id)s", {**fields, "id": person_id})
     return {"id": str(person_id), "merged": False}
@@ -936,7 +1094,7 @@ def assign_face(face_id: UUID, body: FaceAssign, fam: Fam):
             person_id = body.person_id
         elif body.name and body.name.strip():
             name = body.name.strip()
-            row = c.execute("SELECT id FROM people WHERE owner_id = ANY(%s) AND lower(name) = lower(%s) LIMIT 1",
+            row = c.execute("SELECT id FROM people WHERE owner_id = ANY(%s) AND lower(name) = lower(%s) AND NOT hidden LIMIT 1",
                             (fam, name)).fetchone() or c.execute(
                 "INSERT INTO people (owner_id, name) VALUES (%s, %s) RETURNING id", (face["owner_id"], name)).fetchone()
             person_id = row["id"]

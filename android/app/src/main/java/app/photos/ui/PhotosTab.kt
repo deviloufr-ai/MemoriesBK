@@ -25,6 +25,8 @@ import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.GridView
 import androidx.compose.material.icons.outlined.LibraryAdd
+import androidx.compose.material.icons.outlined.Groups
+import androidx.compose.material.icons.outlined.Pets
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.ViewQuilt
@@ -70,6 +72,7 @@ fun PhotosTab(
     share: (List<GridItem>) -> Unit,
     trash: (List<GridItem>) -> Unit,
     addToAlbum: (List<GridItem>) -> Unit,
+    namePet: (List<GridItem>) -> Unit,
     selected: Set<String>,
     onSelectedChange: (Set<String>) -> Unit,
 ) {
@@ -110,8 +113,13 @@ fun PhotosTab(
                     navigationIcon = { IconButton(onClick = { onSelectedChange(emptySet()) }) { Icon(Icons.Default.Close, stringResource(R.string.cancel_selection)) } },
                     title = { Text(pluralStringResource(R.plurals.selected_count, selected.size, selected.size)) },
                     actions = {
-                        IconButton(onClick = { share(selectedItems()) }) { Icon(Icons.Outlined.Share, stringResource(R.string.share)) }
+                        // Actions principales visibles (avant : Famille et Animal cachés dans « Ajouter à un album »)
+                        IconButton(onClick = { vm.shareToFamily(selectedItems()); onSelectedChange(emptySet()) }) {
+                            Icon(Icons.Outlined.Groups, stringResource(R.string.share_to_family))
+                        }
                         IconButton(onClick = { addToAlbum(selectedItems()) }) { Icon(Icons.Outlined.LibraryAdd, stringResource(R.string.add_to_album)) }
+                        IconButton(onClick = { namePet(selectedItems()) }) { Icon(Icons.Outlined.Pets, stringResource(R.string.my_pet)) }
+                        IconButton(onClick = { share(selectedItems()) }) { Icon(Icons.Outlined.Share, stringResource(R.string.share)) }
                         IconButton(onClick = { trash(selectedItems()) }) { Icon(Icons.Outlined.Delete, stringResource(R.string.delete)) }
                     },
                 )

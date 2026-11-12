@@ -150,6 +150,7 @@ class MainActivity : ComponentActivity() {
         }
         val trash = rememberTrashAction(vm) { selected = emptySet(); closeViewer() }
         val addToAlbum = rememberAddToAlbum(vm) { selected = emptySet() }
+        val namePet = rememberAddToAlbum(vm, pet = true) { selected = emptySet() }
         val open: (List<GridItem>, Int) -> Unit = { items, index -> overlays += Overlay.Viewer(items, index) }
         val openCollection: (Collection) -> Unit = { overlays += Overlay.Open(it) }
 
@@ -182,7 +183,7 @@ class MainActivity : ComponentActivity() {
             ) { padding ->
                 Box(Modifier.padding(bottom = padding.calculateBottomPadding())) {
                     when (tab) {
-                        0 -> PhotosTab(vm, gridState, open, onSearch = { tab = 3 }, share, trash, addToAlbum, selected) { selected = it }
+                        0 -> PhotosTab(vm, gridState, open, onSearch = { tab = 3 }, share, trash, addToAlbum, namePet, selected) { selected = it }
                         1 -> FamilyTab(vm, open)
                         2 -> MemoriesTab(vm, open)
                         3 -> ExploreTab(vm, open, openCollection)
