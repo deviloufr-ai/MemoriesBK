@@ -217,6 +217,27 @@
     <string name="family_from_year_label">年（空欄 = すべて）</string>
     <string name="my_pet">マイペット</string>
     <string name="share_to_family">家族と共有</string>
+    <string name="undo">元に戻す</string>
+    <plurals name="items_trashed">
+        <item quantity="other">%d 件をゴミ箱に移動しました</item>
+    </plurals>
+    <plurals name="faces_moved">
+        <item quantity="other">%d 件の顔を修正しました</item>
+    </plurals>
+    <string name="merged_into">「%1$s」に統合しました</string>
+    <string name="merge_with">統合…</string>
+    <string name="merge_title">「%1$s」に統合しますか？</string>
+    <string name="merge_text">「%1$s」の写真はすべて「%2$s」に移ります。同じ人か確認してください。直後なら元に戻せます。</string>
+    <string name="merge_confirm">統合</string>
+    <string name="faces_this_is">この人は…</string>
+    <string name="review_title">確認待ち</string>
+    <string name="review_subtitle">顔とペットを修正するための簡単な質問</string>
+    <string name="review_question">%1$s ですか？</string>
+    <string name="review_yes">はい</string>
+    <string name="review_no">いいえ</string>
+    <string name="review_skip">スキップ</string>
+    <string name="review_done">確認するものはありません</string>
+    <string name="review_done_text">%1$d 件の回答を保存しました。新しい写真が増えると質問も増えます。</string>
     <string name="my_pet_hint">犬や猫に名前を付ける</string>
     <string name="my_pet_help">これらの写真を見本にして、ほかの写真も自動で見つけます。既存のペットを選ぶか、新しい名前を入力してください。</string>
     <string name="pet_name">ペットの名前</string>

@@ -65,6 +65,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -289,7 +290,12 @@ private fun InfoSheet(item: GridItem, vm: GalleryViewModel, onDismiss: () -> Uni
             val d = details ?: return@Column Text(stringResource(R.string.loading), color = MaterialTheme.colorScheme.onSurfaceVariant)
             d.description?.takeIf { it.isNotBlank() }?.let { Text(it, style = MaterialTheme.typography.bodyLarge) }
             if (d.people.isNotEmpty()) FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                d.people.forEach { p -> AssistChip(onClick = { face = p }, label = { Text(p.name ?: unnamed) }) }
+                // Vignette du visage : deux « Noemi » sur une photo = on voit tout de suite lequel est faux
+                d.people.forEach { p ->
+                    AssistChip(onClick = { face = p }, label = { Text(p.name ?: unnamed) }, leadingIcon = p.faceId?.let { id ->
+                        { AsyncImage(faceUrl(id), null, Modifier.size(28.dp).clip(androidx.compose.foundation.shape.CircleShape)) }
+                    })
+                }
             }
             d.city?.let { city ->
                 InfoRow(Icons.Outlined.Place, listOfNotNull(city, d.admin1, d.countryCode).joinToString(", "),

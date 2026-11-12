@@ -226,6 +226,31 @@
     <string name="family_from_year_label">Année (vide = toutes)</string>
     <string name="my_pet">Mon animal</string>
     <string name="share_to_family">Partager avec la famille</string>
+    <string name="undo">Annuler</string>
+    <plurals name="items_trashed">
+        <item quantity="one">%d élément mis à la corbeille</item>
+        <item quantity="many">%d éléments mis à la corbeille</item>
+        <item quantity="other">%d éléments mis à la corbeille</item>
+    </plurals>
+    <plurals name="faces_moved">
+        <item quantity="one">%d visage corrigé</item>
+        <item quantity="many">%d visages corrigés</item>
+        <item quantity="other">%d visages corrigés</item>
+    </plurals>
+    <string name="merged_into">Fusionné dans « %1$s »</string>
+    <string name="merge_with">Fusionner avec…</string>
+    <string name="merge_title">Fusionner dans « %1$s » ?</string>
+    <string name="merge_text">Toutes les photos de « %1$s » passeront dans « %2$s ». Vérifie que c\'est bien la même personne ; tu pourras annuler juste après.</string>
+    <string name="merge_confirm">Fusionner</string>
+    <string name="faces_this_is">C\'est…</string>
+    <string name="review_title">À vérifier</string>
+    <string name="review_subtitle">Questions rapides pour corriger les visages et les animaux</string>
+    <string name="review_question">Est-ce %1$s ?</string>
+    <string name="review_yes">Oui</string>
+    <string name="review_no">Non</string>
+    <string name="review_skip">Passer</string>
+    <string name="review_done">Rien à vérifier</string>
+    <string name="review_done_text">%1$d réponse(s) enregistrée(s). Reviens plus tard : de nouvelles questions apparaîtront avec les nouvelles photos.</string>
     <string name="my_pet_hint">Donner un nom à ton chien, ton chat…</string>
     <string name="my_pet_help">Ces photos servent d\'exemples : ses autres photos sont retrouvées automatiquement. Choisis un animal existant ou donne un nouveau nom.</string>
     <string name="pet_name">Nom de l\'animal</string>

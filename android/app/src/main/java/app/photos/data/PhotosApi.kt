@@ -96,6 +96,21 @@ interface PhotosApi {
     @GET("api/v1/people")
     suspend fun people(): PeopleRes
 
+    @POST("api/v1/people/{id}/merge")
+    suspend fun mergePerson(@Path("id") personId: String, @Body body: MergeReq): PersonPatchRes
+
+    @POST("api/v1/people/{id}/faces/move")
+    suspend fun moveFaces(@Path("id") personId: String, @Body body: FacesMove): FacesMoveRes
+
+    @POST("api/v1/face-events/{batch}/undo")
+    suspend fun undoFaces(@Path("batch") batch: String): Response<Unit>
+
+    @GET("api/v1/review")
+    suspend fun review(): ReviewRes
+
+    @POST("api/v1/review")
+    suspend fun answerReview(@Body body: ReviewAnswer): Response<Unit>
+
     @GET("api/v1/media/{id}/social")
     suspend fun social(@Path("id") mediaId: String): Social
 
@@ -261,8 +276,30 @@ data class Person(
 )
 
 @Serializable data class PeopleRes(val people: List<Person>)
-@Serializable data class PersonPatch(val name: String?)
-@Serializable data class PersonPatchRes(val id: String, val merged: Boolean)
+@Serializable data class PersonPatch(val name: String?, val merge: Boolean = false)
+@Serializable data class PersonPatchRes(val id: String, val merged: Boolean, val batch: String? = null)
+@Serializable data class MergeReq(val into: String)
+@Serializable data class FacesMove(
+    @SerialName("media_ids") val mediaIds: List<String>,
+    @SerialName("to_person_id") val toPersonId: String? = null,
+    val name: String? = null,
+)
+@Serializable data class FacesMoveRes(val moved: Int, val batch: String? = null, @SerialName("to_person_id") val toPersonId: String? = null)
+@Serializable data class ReviewItem(
+    val kind: String,
+    @SerialName("face_id") val faceId: String? = null,
+    @SerialName("media_id") val mediaId: String,
+    @SerialName("subject_id") val subjectId: String,
+    val name: String,
+)
+@Serializable data class ReviewRes(val items: List<ReviewItem>)
+@Serializable data class ReviewAnswer(
+    val kind: String,
+    @SerialName("subject_id") val subjectId: String,
+    @SerialName("media_id") val mediaId: String,
+    @SerialName("face_id") val faceId: String? = null,
+    val yes: Boolean,
+)
 
 @Serializable
 data class Place(

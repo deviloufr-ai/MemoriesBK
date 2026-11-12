@@ -33,6 +33,7 @@ import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.BatteryChargingFull
 import androidx.compose.material.icons.outlined.CloudSync
 import androidx.compose.material.icons.outlined.GroupRemove
+import androidx.compose.material.icons.outlined.FactCheck
 import androidx.compose.material.icons.outlined.PersonAdd
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.rememberCoroutineScope
@@ -235,7 +236,7 @@ fun MemoriesTab(vm: GalleryViewModel, onOpen: (List<GridItem>, Int) -> Unit) {
 /** Gérer : compte, sauvegarde et accès à la version web. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ManageTab(vm: GalleryViewModel, onCleanup: () -> Unit, onTrash: () -> Unit) {
+fun ManageTab(vm: GalleryViewModel, onCleanup: () -> Unit, onTrash: () -> Unit, onReview: () -> Unit) {
     val s by vm.syncSettings.collectAsState()
     val backup by vm.backup.collectAsState()
     val family by vm.family.collectAsState()
@@ -294,6 +295,14 @@ fun ManageTab(vm: GalleryViewModel, onCleanup: () -> Unit, onTrash: () -> Unit) 
                     headlineContent = { Text(stringResource(R.string.cleanup_title)) },
                     supportingContent = { Text(stringResource(R.string.cleanup_subtitle)) },
                     modifier = Modifier.clickable(onClick = onCleanup),
+                )
+            }
+            item {
+                ListItem(
+                    leadingContent = { Icon(Icons.Outlined.FactCheck, null) },
+                    headlineContent = { Text(stringResource(R.string.review_title)) },
+                    supportingContent = { Text(stringResource(R.string.review_subtitle)) },
+                    modifier = Modifier.clickable(onClick = onReview),
                 )
             }
             item {

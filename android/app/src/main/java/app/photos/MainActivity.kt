@@ -94,6 +94,7 @@ private sealed interface Overlay {
     data class Open(val collection: Collection) : Overlay
     data object Cleanup : Overlay
     data object Trash : Overlay
+    data object Review : Overlay
 }
 
 @AndroidEntryPoint
@@ -141,6 +142,15 @@ class MainActivity : ComponentActivity() {
             vm.loadFamily()
         }
         LaunchedEffect(error) { error?.let { snackbar.showSnackbar(it); vm.error.value = null } }
+        val undo by vm.undo.collectAsState()
+        val undoLabel = stringResource(R.string.undo)
+        LaunchedEffect(undo) {
+            undo?.let { u ->
+                vm.undo.value = null
+                val r = snackbar.showSnackbar(u.message, actionLabel = undoLabel, duration = androidx.compose.material3.SnackbarDuration.Long)
+                if (r == androidx.compose.material3.SnackbarResult.ActionPerformed) u.run()
+            }
+        }
 
         val closeViewer = { if (overlays.lastOrNull() is Overlay.Viewer) overlays.removeAt(overlays.lastIndex) }
         val share: (List<GridItem>) -> Unit = { items ->
@@ -187,7 +197,8 @@ class MainActivity : ComponentActivity() {
                         1 -> FamilyTab(vm, open)
                         2 -> MemoriesTab(vm, open)
                         3 -> ExploreTab(vm, open, openCollection)
-                        else -> ManageTab(vm, onCleanup = { overlays += Overlay.Cleanup }, onTrash = { overlays += Overlay.Trash })
+                        else -> ManageTab(vm, onCleanup = { overlays += Overlay.Cleanup }, onTrash = { overlays += Overlay.Trash },
+                            onReview = { overlays += Overlay.Review })
                     }
                 }
             }
@@ -200,6 +211,7 @@ class MainActivity : ComponentActivity() {
                     )
                     Overlay.Cleanup -> CleanupScreen(vm, open, trash, onBack = { overlays.remove(overlay) })
                     Overlay.Trash -> TrashScreen(vm, onBack = { overlays.remove(overlay) })
+                    Overlay.Review -> app.photos.ui.ReviewScreen(vm, onBack = { overlays.remove(overlay) })
                     is Overlay.Viewer -> {
                         BackHandler { overlays.remove(overlay) }
                         ViewerScreen(overlay.items, overlay.index, vm, okHttp, share, trash, addToAlbum,

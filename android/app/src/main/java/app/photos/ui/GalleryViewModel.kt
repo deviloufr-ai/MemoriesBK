@@ -61,6 +61,10 @@ class GalleryViewModel @Inject constructor(
     val zoom = MutableStateFlow(Zoom.DAY)
     val mosaic = MutableStateFlow(true)
     val familyMedia = MutableStateFlow<List<GridItem>?>(null)
+
+    /** Message avec bouton « Annuler » (suppression, fusion, visages déplacés). */
+    data class Undo(val message: String, val run: suspend () -> Unit)
+    val undo = MutableStateFlow<Undo?>(null)
     val familyPeople = MutableStateFlow<Set<String>>(emptySet())
     val familyPets = MutableStateFlow<Set<String>>(emptySet())
     val familyFromYears = MutableStateFlow<Map<String, Int>>(emptyMap())
@@ -316,6 +320,11 @@ class GalleryViewModel @Inject constructor(
         familyMedia.update { list -> list?.filter { it.remoteId !in ids } }
         searchResults.update { list -> list?.filter { it.remoteId !in ids } }
         trashVersion.update { it + 1 }
+        undo.value = Undo(context.resources.getQuantityString(R.plurals.items_trashed, ids.size, ids.size)) {
+            ids.chunked(500).forEach { batch -> call { api.restore(IdsReq(batch)) } }
+            trashVersion.update { it + 1 }
+            refresh()
+        }
         memories.update { list -> list.map { m -> m.copy(items = m.items.filter { it.remoteId !in ids }) }.filter { it.items.isNotEmpty() } }
     }
 
@@ -354,8 +363,50 @@ class GalleryViewModel @Inject constructor(
     }
 
     /** Renvoie l'id final : nommer comme une personne existante fusionne les deux. */
-    suspend fun renamePerson(personId: String, name: String): String? =
-        call { api.renamePerson(personId, PersonPatch(name.ifBlank { null })) }?.also { loadExplore() }?.id
+    /** Résultat d'un renommage : [twinId] non nul = ce nom est déjà pris, l'app demande avant de fusionner. */
+    data class Rename(val id: String?, val twinId: String? = null)
+
+    suspend fun renamePerson(personId: String, name: String, merge: Boolean = false): Rename = try {
+        api.renamePerson(personId, PersonPatch(name.ifBlank { null }, merge)).let { r ->
+            loadExplore()
+            r.batch?.let { offerFaceUndo(context.getString(R.string.merged_into, name), it) }
+            Rename(r.id)
+        }
+    } catch (e: HttpException) {
+        val twin = if (e.code() == 409) e.response()?.errorBody()?.string()?.let { Regex("\"twin\":\"([0-9a-f-]+)\"").find(it)?.groupValues?.get(1) } else null
+        if (twin == null) error.value = context.getString(R.string.error_server, e.code())
+        Rename(null, twin)
+    } catch (e: IOException) {
+        error.value = context.getString(R.string.error_unreachable)
+        Rename(null)
+    }
+
+    private fun offerFaceUndo(message: String, batch: String) {
+        undo.value = Undo(message) { call { api.undoFaces(batch) }; loadExplore(); trashVersion.update { it + 1 } }
+    }
+
+    /** Fusion explicite (après confirmation) ; renvoie la personne qui reste. */
+    suspend fun mergePerson(personId: String, into: String, intoName: String): String? =
+        call { api.mergePerson(personId, app.photos.data.MergeReq(into)) }?.let { r ->
+            loadExplore()
+            r.batch?.let { offerFaceUndo(context.getString(R.string.merged_into, intoName), it) }
+            r.id
+        }
+
+    /** Sélection sur la page d'une personne : « ce n'est pas elle » (toPersonId et name nuls) ou « c'est … ». */
+    fun moveFaces(personId: String, items: List<GridItem>, toPersonId: String?, name: String?) = viewModelScope.launch {
+        val ids = items.mapNotNull { it.remoteId }
+        val r = call { api.moveFaces(personId, app.photos.data.FacesMove(ids, toPersonId, name)) } ?: return@launch
+        trashVersion.update { it + 1 }  // recharge la page de la personne
+        loadExplore()
+        r.batch?.let { offerFaceUndo(context.resources.getQuantityString(R.plurals.faces_moved, r.moved, r.moved), it) }
+    }
+
+    suspend fun reviewQueue(): List<app.photos.data.ReviewItem> = call { api.review() }?.items ?: emptyList()
+
+    fun answerReview(item: app.photos.data.ReviewItem, yes: Boolean) = viewModelScope.launch {
+        call { api.answerReview(app.photos.data.ReviewAnswer(item.kind, item.subjectId, item.mediaId, item.faceId, yes)) }
+    }
 
     /**
      * Adresse locale (192.168.x.x…) mémorisée d'une ancienne connexion : ne marche qu'en Wi-Fi à la maison.

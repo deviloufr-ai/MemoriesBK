@@ -25,6 +25,9 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.CallMerge
+import androidx.compose.material.icons.outlined.PersonOff
+import androidx.compose.material.icons.outlined.PersonSearch
 import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -70,6 +73,13 @@ fun CollectionScreen(
     val items by produceState<List<GridItem>?>(null, collection, version) { value = vm.collection(collection) }
     var renaming by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf(false) }
+    var selected by remember(items) { mutableStateOf(emptySet<String>()) }
+    var picking by remember { mutableStateOf<String?>(null) }  // "merge" | "move"
+    var mergeAsk by remember { mutableStateOf<Triple<String, String?, String>?>(null) }  // (id, visage, nom) de la cible
+    var renameTo by remember { mutableStateOf("") }
+    val person = collection as? Collection.Person
+    val people by vm.people.collectAsState()
+    BackHandler(selected.isNotEmpty()) { selected = emptySet() }
     val unnamed = stringResource(R.string.unnamed)
     BackHandler(onBack = onBack)
 
@@ -77,9 +87,20 @@ fun CollectionScreen(
         topBar = {
             TopAppBar(
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back)) } },
-                title = { Text(if (collection is Collection.Category) categoryLabel(collection.title) else collection.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                title = {
+                    if (selected.isNotEmpty()) Text(selected.size.toString())
+                    else Text(if (collection is Collection.Category) categoryLabel(collection.title) else collection.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                },
                 actions = {
-                    if (collection is Collection.Person) IconButton(onClick = { renaming = true }) { Icon(Icons.Outlined.Edit, stringResource(R.string.name_person)) }
+                    if (person != null && selected.isNotEmpty()) {
+                        IconButton(onClick = {
+                            vm.moveFaces(person.id, items.orEmpty().filter { it.key in selected }, null, null); selected = emptySet()
+                        }) { Icon(Icons.Outlined.PersonOff, stringResource(R.string.face_not_this, person.title)) }
+                        IconButton(onClick = { picking = "move" }) { Icon(Icons.Outlined.PersonSearch, stringResource(R.string.faces_this_is)) }
+                    } else if (person != null) {
+                        IconButton(onClick = { picking = "merge" }) { Icon(Icons.Outlined.CallMerge, stringResource(R.string.merge_with)) }
+                    }
+                    if (collection is Collection.Person && selected.isEmpty()) IconButton(onClick = { renaming = true }) { Icon(Icons.Outlined.Edit, stringResource(R.string.name_person)) }
                     if (collection is Collection.Album || collection is Collection.Pet) IconButton(onClick = { deleting = true }) { Icon(Icons.Outlined.Delete, stringResource(R.string.delete_album)) }
                 },
             )
@@ -91,7 +112,13 @@ fun CollectionScreen(
             list.isEmpty() -> Text(stringResource(R.string.nothing_here), Modifier.padding(padding).padding(24.dp))
             else -> PhotoGrid(
                 sections(list, Zoom.MONTH), 4, rememberLazyGridState(), Modifier.padding(padding),
-                onClick = { onOpen(list, list.indexOf(it)) },
+                selected = selected,
+                onClick = { item ->
+                    if (selected.isNotEmpty()) selected = if (item.key in selected) selected - item.key else selected + item.key
+                    else onOpen(list, list.indexOf(item))
+                },
+                // Appui long sur la page d'une personne : sélection pour corriger plusieurs visages d'un coup
+                onLongClick = if (person != null) ({ item -> selected = selected + item.key }) else null,
             )
         }
     }
@@ -101,7 +128,39 @@ fun CollectionScreen(
             onDismiss = { renaming = false }) { name ->
             renaming = false
             scope.launch {
-                vm.renamePerson(collection.id, name)?.let { id -> onRenamed(Collection.Person(id, name.ifBlank { unnamed })) }
+                val r = vm.renamePerson(collection.id, name)
+                when {
+                    r.id != null -> onRenamed(Collection.Person(r.id, name.ifBlank { unnamed }))
+                    // Nom déjà pris : on montre les deux visages avant de fusionner (plus de fusion silencieuse)
+                    r.twinId != null -> { renameTo = name; mergeAsk = Triple(r.twinId, people.firstOrNull { it.id == r.twinId }?.coverFaceId, name) }
+                }
+            }
+        }
+    }
+    if (person != null) {
+        val selfFace = people.firstOrNull { it.id == person.id }?.coverFaceId
+        when (picking) {
+            "merge" -> PersonPickerDialog(vm, stringResource(R.string.merge_with), person.id, allowNew = false,
+                onDismiss = { picking = null }) { p, _ ->
+                picking = null
+                if (p != null) mergeAsk = Triple(p.id, p.coverFaceId, p.name ?: unnamed)
+            }
+            "move" -> PersonPickerDialog(vm, stringResource(R.string.faces_this_is), person.id, allowNew = true,
+                onDismiss = { picking = null }) { p, name ->
+                picking = null
+                vm.moveFaces(person.id, items.orEmpty().filter { it.key in selected }, p?.id, name)
+                selected = emptySet()
+            }
+        }
+        mergeAsk?.let { (id, face, name) ->
+            MergeConfirmDialog(selfFace to person.title, face to name, onDismiss = { mergeAsk = null }) {
+                mergeAsk = null
+                scope.launch {
+                    val kept = if (renameTo.isNotBlank()) vm.renamePerson(person.id, renameTo, merge = true).id
+                    else vm.mergePerson(person.id, id, name)
+                    renameTo = ""
+                    kept?.let { onRenamed(Collection.Person(it, name)) }
+                }
             }
         }
     }
