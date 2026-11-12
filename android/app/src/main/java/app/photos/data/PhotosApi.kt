@@ -52,10 +52,11 @@ interface PhotosApi {
         @Query("city") city: String? = null,
         @Query("country_code") countryCode: String? = null,
         @Query("tag") tag: String? = null,
+        @Query("limit") limit: Int? = null,
     ): SearchRes
 
     @GET("api/v1/family/media")
-    suspend fun familyMedia(): SearchRes
+    suspend fun familyMedia(@Query("limit") limit: Int? = null): SearchRes
 
     @POST("api/v1/family/media")
     suspend fun familyAdd(@Body body: IdsReq): AddedRes

@@ -227,6 +227,8 @@
     <string name="my_pet">Mon animal</string>
     <string name="share_to_family">Partager avec la famille</string>
     <string name="undo">Annuler</string>
+    <string name="family_since_short">depuis %1$d</string>
+    <string name="family_all_years_plain">Toutes les années</string>
     <plurals name="items_trashed">
         <item quantity="one">%d élément mis à la corbeille</item>
         <item quantity="many">%d éléments mis à la corbeille</item>

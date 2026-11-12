@@ -35,6 +35,7 @@ import androidx.compose.material.icons.outlined.CloudSync
 import androidx.compose.material.icons.outlined.GroupRemove
 import androidx.compose.material.icons.outlined.FactCheck
 import androidx.compose.material.icons.outlined.PersonAdd
+import androidx.compose.material.icons.outlined.Check
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
@@ -126,7 +127,10 @@ fun FamilyTab(vm: GalleryViewModel, onOpen: (List<GridItem>, Int) -> Unit) {
                     }
                 },
             )
-            if (selected.isEmpty()) MonthTabs(anchors, currentIndex, ::jumpTo)
+            if (selected.isEmpty()) {
+                FamilyRulesRow(vm) { pickPeople = true }
+                MonthTabs(anchors, currentIndex, ::jumpTo)
+            }
         }
     }) { padding ->
         when {
@@ -145,6 +149,59 @@ fun FamilyTab(vm: GalleryViewModel, onOpen: (List<GridItem>, Int) -> Unit) {
     }
 }
 
+/** Ce qui alimente Famille, en un coup d'œil : personnes et animaux cochés (avec leur année de départ). */
+@Composable
+private fun FamilyRulesRow(vm: GalleryViewModel, onEdit: () -> Unit) {
+    val people by vm.people.collectAsState()
+    val pets by vm.pets.collectAsState()
+    val chosen by vm.familyPeople.collectAsState()
+    val chosenPets by vm.familyPets.collectAsState()
+    val years by vm.familyFromYears.collectAsState()
+    LaunchedEffect(Unit) { vm.loadExplore() }
+    val unnamed = stringResource(R.string.unnamed)
+    val rules = people.filter { it.id in chosen }.map { Triple(it.id, faceUrl(it.coverFaceId), it.name ?: unnamed) } +
+        pets.filter { it.id in chosenPets }.map { Triple(it.id, it.coverId?.let(::thumbUrl), it.name) }
+    if (rules.isEmpty()) return
+    androidx.compose.foundation.lazy.LazyRow(
+        contentPadding = PaddingValues(horizontal = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        items(rules.size) { i ->
+            val (id, img, name) = rules[i]
+            androidx.compose.material3.AssistChip(
+                onClick = onEdit,
+                label = { Text(years[id]?.let { "$name · ${stringResource(R.string.family_since_short, it)}" } ?: name) },
+                leadingIcon = { AsyncImage(img, null, Modifier.size(24.dp).clip(CircleShape), contentScale = ContentScale.Crop) },
+            )
+        }
+    }
+}
+
+/** Année de départ : « toutes » ou une année de la liste (plus de saisie au clavier). */
+@Composable
+private fun YearChoiceDialog(current: Int?, onDismiss: () -> Unit, onPick: (Int?) -> Unit) {
+    val thisYear = LocalDate.now().year
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.family_from_year_title)) },
+        text = {
+            LazyColumn(Modifier.heightIn(max = 360.dp)) {
+                item {
+                    ListItem(headlineContent = { Text(stringResource(R.string.family_all_years_plain)) },
+                        trailingContent = { if (current == null) Icon(Icons.Outlined.Check, null) },
+                        modifier = Modifier.clickable { onPick(null) })
+                }
+                items((thisYear downTo 2000).toList()) { y ->
+                    ListItem(headlineContent = { Text(stringResource(R.string.family_since_short, y)) },
+                        trailingContent = { if (current == y) Icon(Icons.Outlined.Check, null) },
+                        modifier = Modifier.clickable { onPick(y) })
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
+    )
+}
+
 /** Personnes partagées avec la famille : cocher = toutes leurs photos, actuelles et futures, dans Famille. */
 @Composable
 private fun FamilyPeopleDialog(vm: GalleryViewModel, onDismiss: () -> Unit) {
@@ -155,10 +212,9 @@ private fun FamilyPeopleDialog(vm: GalleryViewModel, onDismiss: () -> Unit) {
     val fromYears by vm.familyFromYears.collectAsState()
     var editingYear by remember { mutableStateOf<Pair<String, Boolean>?>(null) }  // (id, animal ?)
     editingYear?.let { (id, isPet) ->
-        TextPromptDialog(stringResource(R.string.family_from_year_title), stringResource(R.string.family_from_year_label),
-            fromYears[id]?.toString() ?: "", onDismiss = { editingYear = null }) { text ->
+        YearChoiceDialog(fromYears[id], onDismiss = { editingYear = null }) { year ->
             editingYear = null
-            vm.setFamilyFromYear(id, isPet, text.trim().toIntOrNull()?.takeIf { it in 1900..2100 })
+            vm.setFamilyFromYear(id, isPet, year)
         }
     }
     @Composable

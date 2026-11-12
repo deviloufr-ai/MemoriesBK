@@ -192,6 +192,8 @@ class GalleryViewModel @Inject constructor(
     }
 
     fun loadFamilyMedia() = viewModelScope.launch {
+        // Premier écran tout de suite (les 600 plus récentes), puis tout Famille (~10 000 photos, 2 s)
+        if (familyMedia.value == null) call { api.familyMedia(600) }?.let { r -> familyMedia.value = r.items.map(::remoteItem) }
         call { api.familyMedia() }?.let { r -> familyMedia.value = r.items.map(::remoteItem) }
         call { api.familyPeople() }?.let {
             familyPeople.value = it.personIds.toSet(); familyPets.value = it.petIds.toSet(); familyFromYears.value = it.fromYears
@@ -299,13 +301,14 @@ class GalleryViewModel @Inject constructor(
         }
     }
 
-    suspend fun collection(c: Collection): List<GridItem> = call {
+    /** [limit] : premier écran rapide (les plus récentes), puis tout (null). */
+    suspend fun collection(c: Collection, limit: Int? = null): List<GridItem> = call {
         when (c) {
-            is Collection.Person -> api.query(personId = c.id)
-            is Collection.Place -> api.query(city = c.city, countryCode = c.countryCode)
-            is Collection.Album -> api.query(albumId = c.id)
-            is Collection.Category -> api.query(tag = c.title)
-            is Collection.Pet -> api.query(petId = c.id)
+            is Collection.Person -> api.query(personId = c.id, limit = limit)
+            is Collection.Place -> api.query(city = c.city, countryCode = c.countryCode, limit = limit)
+            is Collection.Album -> api.query(albumId = c.id, limit = limit)
+            is Collection.Category -> api.query(tag = c.title, limit = limit)
+            is Collection.Pet -> api.query(petId = c.id, limit = limit)
         }
     }?.items?.map(::remoteItem) ?: emptyList()
 

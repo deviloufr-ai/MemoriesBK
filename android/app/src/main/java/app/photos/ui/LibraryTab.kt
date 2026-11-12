@@ -45,6 +45,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -70,7 +71,17 @@ fun CollectionScreen(
     val scope = rememberCoroutineScope()
     // trashVersion : une photo supprimée depuis la visionneuse disparaît aussi de la liste
     val version by vm.trashVersion.collectAsState()
-    val items by produceState<List<GridItem>?>(null, collection, version) { value = vm.collection(collection) }
+    val items by produceState<List<GridItem>?>(null, collection, version) {
+        if (value == null) value = vm.collection(collection, 300)  // affichage immédiat, puis toutes les années
+        value = vm.collection(collection)
+    }
+    val rows = remember(items) { sections(items.orEmpty(), Zoom.MONTH) }
+    val anchors = remember(rows) { monthAnchors(rows) }
+    val gridState = rememberLazyGridState()
+    val currentIndex by remember(anchors) {
+        derivedStateOf { anchors.indexOfLast { it.second <= gridState.firstVisibleItemIndex }.coerceAtLeast(0) }
+    }
+    fun jumpTo(index: Int) { scope.launch { gridState.scrollToItem(anchors[index].second) } }
     var renaming by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf(false) }
     var selected by remember(items) { mutableStateOf(emptySet<String>()) }
@@ -84,12 +95,18 @@ fun CollectionScreen(
     BackHandler(onBack = onBack)
 
     Scaffold(
-        topBar = {
+        topBar = { Column {
             TopAppBar(
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back)) } },
                 title = {
                     if (selected.isNotEmpty()) Text(selected.size.toString())
-                    else Text(if (collection is Collection.Category) categoryLabel(collection.title) else collection.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    else Column {
+                        Text(if (collection is Collection.Category) categoryLabel(collection.title) else collection.title, maxLines = 1,
+                            overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelLarge)
+                        YearPicker(anchors.getOrNull(currentIndex)?.first?.year, anchors.map { it.first.year }.distinct()) { year ->
+                            jumpTo(anchors.indexOfFirst { it.first.year == year })
+                        }
+                    }
                 },
                 actions = {
                     if (person != null && selected.isNotEmpty()) {
@@ -104,14 +121,17 @@ fun CollectionScreen(
                     if (collection is Collection.Album || collection is Collection.Pet) IconButton(onClick = { deleting = true }) { Icon(Icons.Outlined.Delete, stringResource(R.string.delete_album)) }
                 },
             )
-        },
+            if (selected.isEmpty()) MonthTabs(anchors, currentIndex, ::jumpTo)
+        } },
     ) { padding ->
         val list = items
         when {
             list == null -> Text(stringResource(R.string.loading), Modifier.padding(padding).padding(24.dp))
             list.isEmpty() -> Text(stringResource(R.string.nothing_here), Modifier.padding(padding).padding(24.dp))
             else -> PhotoGrid(
-                sections(list, Zoom.MONTH), 4, rememberLazyGridState(), Modifier.padding(padding),
+                rows, 4, gridState, Modifier.padding(padding).horizontalSwipe(anchors) { dir ->
+                    (currentIndex - dir).takeIf { it in anchors.indices }?.let(::jumpTo)
+                },
                 selected = selected,
                 onClick = { item ->
                     if (selected.isNotEmpty()) selected = if (item.key in selected) selected - item.key else selected + item.key

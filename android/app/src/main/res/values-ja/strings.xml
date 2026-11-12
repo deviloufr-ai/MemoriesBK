@@ -218,6 +218,8 @@
     <string name="my_pet">マイペット</string>
     <string name="share_to_family">家族と共有</string>
     <string name="undo">元に戻す</string>
+    <string name="family_since_short">%1$d 年以降</string>
+    <string name="family_all_years_plain">すべての年</string>
     <plurals name="items_trashed">
         <item quantity="other">%d 件をゴミ箱に移動しました</item>
     </plurals>
