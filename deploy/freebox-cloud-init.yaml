@@ -84,9 +84,44 @@ write_files:
       Persistent=true
       [Install]
       WantedBy=timers.target
+  # Alertes sur le téléphone (app ntfy) : API en panne, worker tué (OOM), réseau relancé, sauvegarde ratée.
+  # Désactivé tant que /etc/photos-alert.conf ne contient pas NTFY_URL=https://ntfy.sh/<sujet-secret>.
+  - path: /usr/local/bin/photos-alert
+    permissions: "0755"
+    content: |
+      #!/bin/sh
+      [ -r /etc/photos-alert.conf ] && . /etc/photos-alert.conf
+      [ -n "$NTFY_URL" ] || exit 0
+      STATE=/var/lib/photos-alert; mkdir -p "$STATE"
+      SINCE=$(cat "$STATE/since" 2>/dev/null || echo "-10min"); date "+%Y-%m-%d %H:%M:%S" > "$STATE/since"
+      MSG=""
+      curl -sf -m 10 localhost:8080/api/v1/health >/dev/null || MSG="$MSG API injoignable ou base/Redis en panne."
+      journalctl -k --since "$SINCE" | grep -q "Killed process.*celery" && MSG="$MSG Worker tué (mémoire), relancé automatiquement."
+      journalctl -t net-watchdog --since "$SINCE" | grep -q "relance" && MSG="$MSG Réseau de la VM relancé."
+      systemctl is-failed -q photos-backup.service && MSG="$MSG Sauvegarde de la base en échec."
+      [ -z "$MSG" ] && { rm -f "$STATE/last"; exit 0; }
+      [ "$MSG" = "$(cat "$STATE/last" 2>/dev/null)" ] && exit 0   # même problème : une seule alerte
+      echo "$MSG" > "$STATE/last"
+      curl -sf -m 10 -H "Title: MemoriesBK" -d "$MSG" "$NTFY_URL" >/dev/null
+  - path: /etc/systemd/system/photos-alert.service
+    content: |
+      [Unit]
+      Description=Alertes MemoriesBK (ntfy)
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/local/bin/photos-alert
+  - path: /etc/systemd/system/photos-alert.timer
+    content: |
+      [Unit]
+      Description=Verifie MemoriesBK toutes les 5 minutes
+      [Timer]
+      OnBootSec=3min
+      OnUnitActiveSec=5min
+      [Install]
+      WantedBy=timers.target
 
 runcmd:
-  - systemctl daemon-reload && systemctl enable --now net-watchdog.timer photos-backup.timer
+  - systemctl daemon-reload && systemctl enable --now net-watchdog.timer photos-backup.timer photos-alert.timer
   - curl -fsSL https://get.docker.com | sh
   - usermod -aG docker freebox
   - systemctl enable --now docker

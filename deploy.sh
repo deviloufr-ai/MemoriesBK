@@ -13,7 +13,7 @@ REV=$(git rev-parse --short HEAD)
 
 # Fichiers suivis seulement : .env, APK, données restent intacts sur la VM ; les tests tournent avant le redémarrage
 git archive HEAD server db docker-compose.yml | ssh "$HOST" "tar -x -C photos && echo $REV > photos/server/REVISION"
-ssh "$HOST" "cd photos && sudo docker compose build -q worker api && sudo docker compose run --rm --no-deps -T api python -m pytest -q test_util.py test_metadata.py"
+ssh "$HOST" "cd photos && sudo docker compose build -q worker api && sudo docker compose run --rm --no-deps -T api python -m pytest -q test_util.py test_metadata.py test_integration.py"
 ssh "$HOST" "cd photos && sudo docker compose up -d --remove-orphans && sudo docker image prune -f >/dev/null"
 
 i=0
