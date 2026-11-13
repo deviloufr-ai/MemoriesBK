@@ -360,4 +360,7 @@
     <string name="sharing_people">写っている人</string>
     <string name="sharing_albums">またはアルバム</string>
     <string name="sharing_rule_help">人もアルバムも選ばない場合は、期間内のすべての写真が対象です。人物は顔認識で判定されます。</string>
+    <string name="more">その他</string>
+    <plurals name="photos_count"><item quantity="other">%1$s 枚</item></plurals>
+    <plurals name="members_count"><item quantity="other">%1$d 人</item></plurals>
 </resources>

@@ -183,11 +183,11 @@ fun MonthTabs(anchors: List<Pair<YearMonth, Int>>, currentIndex: Int, jumpTo: (I
 }
 
 @Composable
-fun YearPicker(year: Int?, years: List<Int>, onPick: (Int) -> Unit) {
+fun YearPicker(year: Int?, years: List<Int>, style: androidx.compose.ui.text.TextStyle = MaterialTheme.typography.headlineMedium, onPick: (Int) -> Unit) {
     var open by remember { mutableStateOf(false) }
     Box {
         TextButton(onClick = { open = true }, enabled = years.size > 1, contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)) {
-            Text((year ?: "MemoriesBK").toString(), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold,
+            Text((year ?: "MemoriesBK").toString(), style = style,
                 color = MaterialTheme.colorScheme.onSurface)
             if (years.size > 1) Icon(Icons.Default.ArrowDropDown, stringResource(R.string.choose_year), tint = MaterialTheme.colorScheme.onSurface)
         }

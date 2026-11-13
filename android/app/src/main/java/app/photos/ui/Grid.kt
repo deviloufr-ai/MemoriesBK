@@ -102,8 +102,8 @@ fun PhotoGrid(
                 when (row) {
                     is GridRow.Header -> Text(
                         row.label,
-                        style = MaterialTheme.typography.titleSmall,
-                        modifier = Modifier.padding(start = 12.dp, top = 20.dp, bottom = 8.dp),
+                        style = MaterialTheme.typography.titleLarge, // serif : légende d'album
+                        modifier = Modifier.padding(start = 16.dp, top = 24.dp, bottom = 12.dp),
                     )
                     is GridRow.Cell -> Thumb(
                         row.item,

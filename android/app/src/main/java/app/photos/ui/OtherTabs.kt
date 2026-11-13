@@ -1,5 +1,14 @@
 package app.photos.ui
 
+import androidx.compose.foundation.layout.Row
+
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.ui.res.pluralStringResource
+
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.pluralStringResource
 import app.photos.R
@@ -108,29 +117,36 @@ fun FamilyTab(vm: GalleryViewModel, onOpen: (List<GridItem>, Int) -> Unit) {
     val toggle = { item: GridItem -> selected = if (item.key in selected) selected - item.key else selected + item.key }
 
     Scaffold(contentWindowInsets = WindowInsets(0), topBar = {
-        Column {
-            TopAppBar(
-                title = {
-                    if (selected.isNotEmpty()) Text(selected.size.toString())
-                    else Column {
-                        Text(stringResource(R.string.tab_family), style = MaterialTheme.typography.labelMedium)
-                        YearPicker(anchors.getOrNull(currentIndex)?.first?.year, anchors.map { it.first.year }.distinct()) { year ->
-                            jumpTo(anchors.indexOfFirst { it.first.year == year })
-                        }
-                    }
-                },
-                actions = {
-                    if (selected.isNotEmpty()) IconButton(onClick = { vm.removeFromFamily(cells.filter { it.key in selected }) }) {
-                        Icon(Icons.Outlined.GroupRemove, stringResource(R.string.remove_from_family))
-                    } else IconButton(onClick = { pickPeople = true }) {
-                        Icon(Icons.Outlined.PersonAdd, stringResource(R.string.family_by_face))
-                    }
-                },
-            )
-            if (selected.isEmpty()) {
-                FamilyRulesRow(vm) { pickPeople = true }
-                MonthTabs(anchors, currentIndex, ::jumpTo)
+        if (selected.isNotEmpty()) TopAppBar(
+            title = { Text(selected.size.toString()) },
+            navigationIcon = { IconButton(onClick = { selected = emptySet() }) { Icon(Icons.Outlined.Close, stringResource(R.string.cancel)) } },
+            actions = {
+                IconButton(onClick = { vm.removeFromFamily(cells.filter { it.key in selected }) }) {
+                    Icon(Icons.Outlined.GroupRemove, stringResource(R.string.remove_from_family))
+                }
+            },
+        ) else Column(Modifier.statusBarsPadding()) {
+            val family by vm.family.collectAsState()
+            Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(stringResource(R.string.tab_family), style = MaterialTheme.typography.headlineMedium)
+                    val members = family?.members?.size ?: 0
+                    Text(
+                        listOfNotNull(
+                            shared?.let { pluralStringResource(R.plurals.photos_count, it.size, "%,d".format(it.size).replace(',', '\u202F')) },
+                            members.takeIf { it > 1 }?.let { pluralStringResource(R.plurals.members_count, it, it) },
+                        ).joinToString(" · "),
+                        style = MaterialTheme.typography.labelMedium.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                YearPicker(anchors.getOrNull(currentIndex)?.first?.year, anchors.map { it.first.year }.distinct(),
+                    style = MaterialTheme.typography.titleLarge) { year ->
+                    jumpTo(anchors.indexOfFirst { it.first.year == year })
+                }
             }
+            FamilyRulesRow(vm) { pickPeople = true }
+            MonthTabs(anchors, currentIndex, ::jumpTo)
         }
     }) { padding ->
         when {
@@ -161,18 +177,41 @@ private fun FamilyRulesRow(vm: GalleryViewModel, onEdit: () -> Unit) {
     val unnamed = stringResource(R.string.unnamed)
     val rules = people.filter { it.id in chosen }.map { Triple(it.id, faceUrl(it.coverFaceId), it.name ?: unnamed) } +
         pets.filter { it.id in chosenPets }.map { Triple(it.id, it.coverId?.let(::thumbUrl), it.name) }
-    if (rules.isEmpty()) return
+    // Avatars des personnes et animaux qui alimentent Famille, puis « Ajouter » : un toucher ouvre le réglage
     androidx.compose.foundation.lazy.LazyRow(
-        contentPadding = PaddingValues(horizontal = 12.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         items(rules.size) { i ->
             val (id, img, name) = rules[i]
-            androidx.compose.material3.AssistChip(
-                onClick = onEdit,
-                label = { Text(years[id]?.let { "$name · ${stringResource(R.string.family_since_short, it)}" } ?: name) },
-                leadingIcon = { AsyncImage(img, null, Modifier.size(24.dp).clip(CircleShape), contentScale = ContentScale.Crop) },
-            )
+            RuleAvatar(name, years[id]?.let { "≥ $it" }, onEdit) {
+                AsyncImage(img, name, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+            }
+        }
+        item {
+            RuleAvatar(stringResource(R.string.add), null, onEdit, border = true) {
+                Icon(Icons.Outlined.Add, null, Modifier.align(Alignment.Center).size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
+}
+
+@Composable
+private fun RuleAvatar(name: String, since: String?, onClick: () -> Unit, border: Boolean = false, image: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit) {
+    Column(
+        Modifier.width(64.dp).clickable(onClick = onClick),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Box(
+            Modifier.size(40.dp).clip(CircleShape)
+                .then(if (border) Modifier.border(1.dp, MaterialTheme.colorScheme.outline, CircleShape) else Modifier.background(MaterialTheme.colorScheme.surfaceVariant)),
+            content = image,
+        )
+        Text(name, style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+        since?.let {
+            Text(it, style = MaterialTheme.typography.labelSmall.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace),
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

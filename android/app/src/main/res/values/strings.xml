@@ -380,4 +380,7 @@
     <string name="sharing_people">Photos où apparaît</string>
     <string name="sharing_albums">Ou photos des albums</string>
     <string name="sharing_rule_help">Sans personne ni album choisi : toutes les photos de la période. Les personnes sont reconnues par l’analyse des visages.</string>
+    <string name="more">Plus</string>
+    <plurals name="photos_count"><item quantity="one">%1$s photo</item><item quantity="other">%1$s photos</item></plurals>
+    <plurals name="members_count"><item quantity="one">%1$d membre</item><item quantity="other">%1$d membres</item></plurals>
 </resources>

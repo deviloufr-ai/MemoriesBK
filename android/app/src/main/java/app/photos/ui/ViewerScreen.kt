@@ -48,6 +48,14 @@ import androidx.compose.material.icons.outlined.Place
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.TextSnippet
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material.icons.outlined.MoreHoriz
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -133,11 +141,14 @@ fun ViewerScreen(
         if (comments) current.remoteId?.let { id ->
             social?.let { CommentsSheet(id, it, vm, onChanged = { s -> social = s }, onDismiss = { comments = false }) }
         }
+        // Infos de la photo courante : ligne technique en haut, visages en bas
+        val details by produceState(initialValue = null as app.photos.data.MediaDetails?, current.remoteId) {
+            value = current.remoteId?.let { runCatching { vm.details(it) }.getOrNull() }
+        }
+        val scrim = Color.Black.copy(alpha = 0.72f)
         AnimatedVisibility(chrome, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.align(Alignment.TopCenter)) {
             Row(
-                Modifier.fillMaxWidth()
-                    .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.6f), Color.Transparent)))
-                    .statusBarsPadding().padding(4.dp),
+                Modifier.fillMaxWidth().background(scrim).statusBarsPadding().padding(horizontal = 4.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 IconButton(onClick = onClose) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back), tint = Color.White) }
@@ -145,40 +156,75 @@ fun ViewerScreen(
                 val members = family?.members.orEmpty()
                 val author = (current.ownerId?.let { id -> members.find { it.id == id } } ?: members.find { it.me }.takeIf { current.ownerId == null })
                     ?.let { if (it.me) stringResource(R.string.you) else it.displayName ?: it.email }
-                Column {
+                Column(Modifier.weight(1f)) {
                     Text(dateLabel(current.takenAt).replaceFirstChar { it.titlecase(Locale.getDefault()) },
                         color = Color.White, style = MaterialTheme.typography.titleSmall)
-                    if (author != null && members.size > 1)
-                        Text(stringResource(R.string.added_by_viewer, author), color = Color.White.copy(alpha = 0.8f), style = MaterialTheme.typography.labelSmall)
+                    val d = details
+                    val meta = listOfNotNull(
+                        d?.city,
+                        listOfNotNull(d?.cameraMake, d?.cameraModel).distinct().joinToString(" ").ifBlank { null },
+                        if (d?.width != null && d.height != null) "${d.width}×${d.height}" else null,
+                        if (author != null && members.size > 1) stringResource(R.string.added_by_viewer, author) else null,
+                    ).joinToString(" · ")
+                    if (meta.isNotEmpty()) Text(meta, color = ViewerMuted, maxLines = 1,
+                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace))
                 }
+                IconButton(onClick = { info = current }) { Icon(Icons.Outlined.Info, stringResource(R.string.info), tint = Color.White) }
             }
         }
         AnimatedVisibility(chrome, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.align(Alignment.BottomCenter)) {
-            Row(
-                Modifier.fillMaxWidth()
-                    .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.6f))))
-                    .navigationBarsPadding().padding(vertical = 8.dp),
-                horizontalArrangement = Arrangement.SpaceEvenly,
-            ) {
-                social?.let { so ->
-                    val id = current.remoteId!!
-                    ViewerAction(if (so.liked) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
-                        if (so.likes.isEmpty()) stringResource(R.string.like) else so.likes.size.toString(),
-                        tint = if (so.liked) Color(0xFFE53935) else Color.White) {
-                        scope.launch { vm.setLike(id, !so.liked)?.let { social = it } }
+            Column(Modifier.fillMaxWidth().background(scrim).navigationBarsPadding()) {
+                val people = details?.people.orEmpty().filter { it.name != null }
+                if (people.isNotEmpty()) Row(
+                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
+                    people.forEach { p ->
+                        Column(
+                            Modifier.clickable { onPerson(Collection.Person(p.id, p.name!!)) },
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            AsyncImage(p.faceId?.let(::faceUrl), p.name, Modifier.size(36.dp).clip(CircleShape).background(Color.DarkGray),
+                                contentScale = ContentScale.Crop)
+                            Text(p.name!!, color = Color.White, style = MaterialTheme.typography.labelSmall)
+                        }
                     }
-                    ViewerAction(Icons.AutoMirrored.Outlined.Comment,
-                        if (so.comments.isEmpty()) stringResource(R.string.comment) else so.comments.size.toString()) { comments = true }
                 }
-                ViewerAction(Icons.Outlined.Share, stringResource(R.string.share)) { share(listOf(current)) }
-                ViewerAction(Icons.Outlined.Info, stringResource(R.string.info)) { info = current }
-                if (!current.isVideo) ViewerAction(Icons.Outlined.AutoFixHigh, stringResource(R.string.enhance)) {
-                    // Sans clé Gemini sur le serveur : retouche locale directe, sinon choix
-                    if (family?.gemini == true) enhancing = current else vm.enhance(current, "auto")
+                HorizontalDivider(color = Color.White.copy(alpha = 0.08f))
+                Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                    val so = social
+                    val id = current.remoteId
+                    if (so != null && id != null) {
+                        ViewerAction(if (so.liked) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+                            if (so.likes.isEmpty()) stringResource(R.string.like) else so.likes.size.toString(),
+                            tint = if (so.liked) ViewerAccent else ViewerMuted) {
+                            scope.launch { vm.setLike(id, !so.liked)?.let { social = it } }
+                        }
+                        ViewerAction(Icons.AutoMirrored.Outlined.Comment,
+                            if (so.comments.isEmpty()) stringResource(R.string.comment) else so.comments.size.toString()) { comments = true }
+                    }
+                    if (id != null) ViewerAction(Icons.Outlined.Groups, stringResource(R.string.tab_family)) { vm.shareToFamily(listOf(current)) }
+                    ViewerAction(Icons.Outlined.Share, stringResource(R.string.share)) { share(listOf(current)) }
+                    Box {
+                        var more by remember { mutableStateOf(false) }
+                        ViewerAction(Icons.Outlined.MoreHoriz, stringResource(R.string.more)) { more = true }
+                        DropdownMenu(expanded = more, onDismissRequest = { more = false }) {
+                            DropdownMenuItem(text = { Text(stringResource(R.string.info)) }, leadingIcon = { Icon(Icons.Outlined.Info, null) },
+                                onClick = { more = false; info = current })
+                            if (!current.isVideo) DropdownMenuItem(text = { Text(stringResource(R.string.enhance)) },
+                                leadingIcon = { Icon(Icons.Outlined.AutoFixHigh, null) }, onClick = {
+                                    more = false
+                                    // Sans clé Gemini sur le serveur : retouche locale directe, sinon choix
+                                    if (family?.gemini == true) enhancing = current else vm.enhance(current, "auto")
+                                })
+                            DropdownMenuItem(text = { Text(stringResource(R.string.album)) }, leadingIcon = { Icon(Icons.Outlined.LibraryAdd, null) },
+                                onClick = { more = false; addToAlbum(listOf(current)) })
+                            DropdownMenuItem(text = { Text(stringResource(R.string.delete)) }, leadingIcon = { Icon(Icons.Outlined.Delete, null) },
+                                onClick = { more = false; trash(listOf(current)) })
+                        }
+                    }
                 }
-                if (current.remoteId != null) ViewerAction(Icons.Outlined.Groups, stringResource(R.string.tab_family)) { vm.shareToFamily(listOf(current)) }
-                ViewerAction(Icons.Outlined.LibraryAdd, stringResource(R.string.album)) { addToAlbum(listOf(current)) }
-                ViewerAction(Icons.Outlined.Delete, stringResource(R.string.delete)) { trash(listOf(current)) }
             }
         }
     }
@@ -199,12 +245,19 @@ fun ViewerScreen(
 }
 
 @Composable
-private fun ViewerAction(icon: ImageVector, label: String, tint: Color = Color.White, onClick: () -> Unit) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        IconButton(onClick = onClick) { Icon(icon, contentDescription = label, tint = tint) }
-        Text(label, color = Color.White, style = MaterialTheme.typography.labelSmall)
+private fun ViewerAction(icon: ImageVector, label: String, tint: Color = ViewerMuted, onClick: () -> Unit) {
+    Column(
+        Modifier.size(width = 64.dp, height = 56.dp).clickable(onClick = onClick),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically),
+    ) {
+        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(22.dp))
+        Text(label, color = tint, style = MaterialTheme.typography.labelSmall, maxLines = 1)
     }
 }
+
+private val ViewerMuted = Color(0xFFB4ADA3)
+private val ViewerAccent = Color(0xFFE3A08A) // brique éclaircie : lisible sur fond noir
 
 /**
  * Pincement / double tap pour zoomer, glisser pour se déplacer dans l'image zoomée.
