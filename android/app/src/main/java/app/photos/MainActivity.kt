@@ -211,7 +211,7 @@ class MainActivity : ComponentActivity() {
                     is Overlay.Viewer -> {
                         BackHandler { overlays.remove(overlay) }
                         ViewerScreen(overlay.items, overlay.index, vm, okHttp, share, trash, addToAlbum,
-                            onPerson = openCollection, onClose = { overlays.remove(overlay) })
+                            onPerson = openCollection, onEnhanced = { open(listOf(it), 0) }, onClose = { overlays.remove(overlay) })
                     }
                 }
             }

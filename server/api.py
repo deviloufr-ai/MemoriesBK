@@ -655,7 +655,7 @@ class EnhanceReq(BaseModel):
     mode: Literal["auto", "gemini"] = "auto"
 
 
-@app.post("/api/v1/media/{media_id}/enhance", status_code=202)
+@app.post("/api/v1/media/{media_id}/enhance")
 def enhance_media(media_id: UUID, body: EnhanceReq, uid: User, fam: Fam):
     """Retouche : « auto » sur le serveur (privé, gratuit) ou « gemini » (photo envoyée à Google)."""
     row = _owned(media_id, fam)
@@ -663,8 +663,16 @@ def enhance_media(media_id: UUID, body: EnhanceReq, uid: User, fam: Fam):
         raise HTTPException(400, "seules les photos peuvent être retouchées")
     if body.mode == "gemini" and not os.environ.get("GEMINI_API_KEY"):
         raise HTTPException(400, "clé Gemini non configurée sur le serveur (GEMINI_API_KEY)")
-    enhance_task.delay(str(media_id), str(uid), body.mode)
-    return {"status": "processing"}
+    # Attendre la copie (quelques secondes, Gemini un peu plus) : l'app l'ouvre directement
+    try:
+        new_id = enhance_task.apply_async(args=[str(media_id), str(uid), body.mode]).get(timeout=150)
+    except Exception as e:
+        raise HTTPException(502, f"retouche impossible : {e}")
+    with pool.connection() as c:
+        row = c.execute(f"SELECT {MEDIA_COLS} FROM media m WHERE m.id = %s AND m.status = 'ready'", (new_id,)).fetchone()
+    if row is None:
+        raise HTTPException(502, "copie retouchée introuvable")
+    return row
 
 
 # ---------- Nettoyage : photos ratées, doublons, suppression par mots ----------

@@ -465,7 +465,7 @@ def _import_folder(job_id: str, lock: str):
         raise
 
 
-@app.task
+@app.task(ignore_result=False)
 def enhance(media_id: str, user_id: str, mode: str = "auto"):
     """Crée une copie retouchée (l'original n'est jamais modifié), qui suit ensuite le pipeline normal."""
     import uuid
@@ -501,11 +501,15 @@ def enhance(media_id: str, user_id: str, mode: str = "auto"):
                 "RETURNING id",
                 (user_id, sha, f"{Path(m['original_name']).stem}_{suffix}.jpg", tmp.stat().st_size,
                  m["taken_at"], media_id)).fetchone()
-        if row is None:
-            return None  # déjà retouchée à l'identique
+        if row is None:  # déjà retouchée à l'identique : on renvoie la copie existante
+            with db() as conn:
+                row = conn.execute("SELECT id FROM media WHERE owner_id = %s AND sha256 = %s", (user_id, sha)).fetchone()
+            return str(row["id"]) if row else None
         new_id = str(row["id"])
         os.replace(tmp, QUARANTINE_DIR / new_id)
-        ingest.delay(new_id)
+        # Ingestion ici même (vignettes, statut ready) : l'app ouvre la copie dès la réponse,
+        # sans attendre derrière les imports du NAS dans la file media
+        ingest(new_id)
         return new_id
     finally:
         tmp.unlink(missing_ok=True)

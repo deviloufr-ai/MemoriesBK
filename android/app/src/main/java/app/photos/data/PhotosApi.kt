@@ -170,7 +170,7 @@ interface PhotosApi {
     suspend fun categories(): CategoriesRes
 
     @POST("api/v1/media/{id}/enhance")
-    suspend fun enhance(@Path("id") mediaId: String, @Body body: EnhanceReq): Response<Unit>
+    suspend fun enhance(@Path("id") mediaId: String, @Body body: EnhanceReq): RemoteMedia
 
     @GET("api/v1/family")
     suspend fun family(): FamilyRes

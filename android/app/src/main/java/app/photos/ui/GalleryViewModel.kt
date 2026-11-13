@@ -286,11 +286,12 @@ class GalleryViewModel @Inject constructor(
     }
 
     /** Retouche : nouvelle copie créée par le serveur, l'original reste intact. */
-    fun enhance(item: GridItem, mode: String) = viewModelScope.launch {
+    fun enhance(item: GridItem, mode: String, onDone: (GridItem) -> Unit) = viewModelScope.launch {
         val id = item.remoteId ?: run { error.value = context.getString(R.string.error_not_backed_up); return@launch }
-        val r = call { api.enhance(id, EnhanceReq(mode)) } ?: return@launch
-        error.value = if (r.isSuccessful) context.getString(R.string.enhance_started)
-        else context.getString(R.string.enhance_failed, r.code())
+        error.value = context.getString(R.string.enhance_started)
+        val copy = call { api.enhance(id, EnhanceReq(mode)) } ?: return@launch
+        refresh()
+        onDone(remoteItem(copy))
     }
 
     fun loadAlbums() = viewModelScope.launch { call { api.albums() }?.let { albums.value = it.albums } }

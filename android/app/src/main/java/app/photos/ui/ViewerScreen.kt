@@ -112,6 +112,7 @@ fun ViewerScreen(
     trash: (List<GridItem>) -> Unit,
     addToAlbum: (List<GridItem>) -> Unit,
     onPerson: (Collection) -> Unit,
+    onEnhanced: (GridItem) -> Unit,
     onClose: () -> Unit,
 ) {
     val pager = rememberPagerState(initialPage = startIndex.coerceIn(0, (items.size - 1).coerceAtLeast(0))) { items.size }
@@ -216,7 +217,7 @@ fun ViewerScreen(
                                 leadingIcon = { Icon(Icons.Outlined.AutoFixHigh, null) }, onClick = {
                                     more = false
                                     // Sans clé Gemini sur le serveur : retouche locale directe, sinon choix
-                                    if (family?.gemini == true) enhancing = current else vm.enhance(current, "auto")
+                                    if (family?.gemini == true) enhancing = current else vm.enhance(current, "auto", onEnhanced)
                                 })
                             DropdownMenuItem(text = { Text(stringResource(R.string.album)) }, leadingIcon = { Icon(Icons.Outlined.LibraryAdd, null) },
                                 onClick = { more = false; addToAlbum(listOf(current)) })
@@ -234,10 +235,10 @@ fun ViewerScreen(
             title = { Text(stringResource(R.string.enhance_title)) },
             text = { Text(stringResource(R.string.enhance_text)) },
             confirmButton = {
-                androidx.compose.material3.TextButton(onClick = { enhancing = null; vm.enhance(item, "auto") }) { Text(stringResource(R.string.enhance_auto)) }
+                androidx.compose.material3.TextButton(onClick = { enhancing = null; vm.enhance(item, "auto", onEnhanced) }) { Text(stringResource(R.string.enhance_auto)) }
             },
             dismissButton = {
-                androidx.compose.material3.TextButton(onClick = { enhancing = null; vm.enhance(item, "gemini") }) { Text(stringResource(R.string.enhance_gemini)) }
+                androidx.compose.material3.TextButton(onClick = { enhancing = null; vm.enhance(item, "gemini", onEnhanced) }) { Text(stringResource(R.string.enhance_gemini)) }
             },
         )
     }

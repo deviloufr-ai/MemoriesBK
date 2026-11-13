@@ -72,8 +72,7 @@
     <string name="error_check_member_fields">Vérifie l\'e-mail et le mot de passe (10 caractères minimum)</string>
     <string name="error_not_backed_up">Photo pas encore sauvegardée sur le serveur</string>
     <string name="member_added">%1$s ajouté(e) à la famille</string>
-    <string name="enhance_started">Amélioration en cours : la copie apparaîtra à côté de l\'original dans quelques instants</string>
-    <string name="enhance_failed">Amélioration impossible (%1$d)</string>
+    <string name="enhance_started">Amélioration en cours…</string>
     <string name="album_created">Album « %1$s » créé</string>
     <plurals name="items_added_to_backup">
         <item quantity="one">%1$d élément ajouté à la sauvegarde</item>
