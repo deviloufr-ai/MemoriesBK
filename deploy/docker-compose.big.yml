@@ -1,0 +1,21 @@
+# Réglages du serveur 192.168.1.58 (i7-4790K, 8 threads, 30 Go) : copié là-bas en ~/photos/docker-compose.override.yml,
+# que docker compose charge tout seul. Jamais sur la Freebox (2 Go) : photos-switch ne recopie pas ce fichier.
+services:
+  postgres:
+    command: ["postgres", "-c", "shared_buffers=2GB", "-c", "effective_cache_size=8GB", "-c", "work_mem=32MB",
+              "-c", "maintenance_work_mem=1GB", "-c", "max_connections=30"]
+
+  api:
+    environment: &big
+      MALLOC_ARENA_MAX: "4"
+      VIPS_CONCURRENCY: "4"
+      OMP_NUM_THREADS: "4"
+      MKL_NUM_THREADS: "4"
+      IMPORT_BACKLOG_PAUSE: "1000000"   # assez de RAM pour import NAS + IA en même temps : ml_gate ne met plus l'IA en pause
+
+  worker:
+    environment: *big
+    command: ["celery", "-A", "tasks", "worker", "-B", "-s", "/tmp/celerybeat-schedule",
+              "-Q", "query,media,vlm", "--pool", "threads", "-c", "6"]
+    mem_limit: 16g
+    memswap_limit: 20g

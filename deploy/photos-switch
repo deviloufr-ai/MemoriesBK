@@ -30,12 +30,12 @@ health() {
 
 pull() {
   for d in $DIRS; do mkdir -p "$d"; rs "$FB:$d/" "$d/"; done
-  rs "$FB:/home/freebox/photos/" "$LOCAL/" && chown -R devil:devil "$LOCAL"
+  rs --exclude /docker-compose.override.yml "$FB:/home/freebox/photos/" "$LOCAL/" && chown -R devil:devil "$LOCAL"
 }
 
 push() {
   for d in $DIRS; do rs "$d/" "$FB:$d/"; done
-  rs "$LOCAL/" "$FB:/home/freebox/photos/" && fb 'sudo chown -R freebox:freebox photos'
+  rs --exclude /docker-compose.override.yml "$LOCAL/" "$FB:/home/freebox/photos/" && fb 'sudo chown -R freebox:freebox photos'
 }
 
 takeover() {
