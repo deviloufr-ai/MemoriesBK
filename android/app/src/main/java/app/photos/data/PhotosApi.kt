@@ -166,6 +166,15 @@ interface PhotosApi {
     @POST("api/v1/media/restore")
     suspend fun restore(@Body body: IdsReq): Response<Unit>
 
+    @GET("api/v1/hidden")
+    suspend fun hiddenList(): SearchRes
+
+    @POST("api/v1/media/hide")
+    suspend fun hide(@Body body: IdsReq): Response<Unit>
+
+    @POST("api/v1/media/unhide")
+    suspend fun unhide(@Body body: IdsReq): Response<Unit>
+
     @GET("api/v1/categories")
     suspend fun categories(): CategoriesRes
 

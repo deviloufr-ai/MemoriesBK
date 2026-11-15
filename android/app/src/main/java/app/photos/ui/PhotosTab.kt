@@ -18,6 +18,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material.icons.outlined.CloudUpload
@@ -30,6 +31,7 @@ import androidx.compose.material.icons.outlined.Pets
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.ViewQuilt
+import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -118,9 +120,20 @@ fun PhotosTab(
                             Icon(Icons.Outlined.Groups, stringResource(R.string.share_to_family))
                         }
                         IconButton(onClick = { addToAlbum(selectedItems()) }) { Icon(Icons.Outlined.LibraryAdd, stringResource(R.string.add_to_album)) }
-                        IconButton(onClick = { namePet(selectedItems()) }) { Icon(Icons.Outlined.Pets, stringResource(R.string.my_pet)) }
                         IconButton(onClick = { share(selectedItems()) }) { Icon(Icons.Outlined.Share, stringResource(R.string.share)) }
                         IconButton(onClick = { trash(selectedItems()) }) { Icon(Icons.Outlined.Delete, stringResource(R.string.delete)) }
+                        Box {
+                            var more by remember { mutableStateOf(false) }
+                            IconButton(onClick = { more = true }) { Icon(Icons.Default.MoreVert, stringResource(R.string.more)) }
+                            DropdownMenu(expanded = more, onDismissRequest = { more = false }) {
+                                DropdownMenuItem(text = { Text(stringResource(R.string.hide)) },
+                                    leadingIcon = { Icon(Icons.Outlined.VisibilityOff, null) },
+                                    onClick = { more = false; vm.hide(selectedItems()); onSelectedChange(emptySet()) })
+                                DropdownMenuItem(text = { Text(stringResource(R.string.my_pet)) },
+                                    leadingIcon = { Icon(Icons.Outlined.Pets, null) },
+                                    onClick = { more = false; namePet(selectedItems()) })
+                            }
+                        }
                     },
                 )
             } else Column {

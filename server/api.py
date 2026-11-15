@@ -428,7 +428,7 @@ def timeline(fam: Fam, cursor: str | None = None, limit: int = Query(200, ge=1, 
     with pool.connection() as c:
         rows = c.execute(
             # Onglet Photos = mes photos seulement ; celles des autres : onglet Famille, recherche, personnes, albums
-            f"SELECT {MEDIA_COLS} FROM media m WHERE {ready(fam)} AND m.owner_id = %(me)s "
+            f"SELECT {MEDIA_COLS} FROM media m WHERE {ready(fam)} AND m.owner_id = %(me)s AND m.hidden_at IS NULL "
             f"{after} ORDER BY m.taken_at DESC, m.id DESC LIMIT %(limit)s",
             params).fetchall()
     last = rows[-1] if len(rows) == limit else None
@@ -505,7 +505,7 @@ def media_query(fam: Fam, person_id: UUID | None = None, album_id: UUID | None =
 def media_recent(fam: Fam, limit: int = Query(300, ge=1, le=1000)):
     """Derniers ajouts à la bibliothèque (date d'import, pas de prise de vue)."""
     with pool.connection() as c:
-        rows = c.execute(f"SELECT {MEDIA_COLS}, m.created_at FROM media m WHERE {ready(fam)} "
+        rows = c.execute(f"SELECT {MEDIA_COLS}, m.created_at FROM media m WHERE {ready(fam)} AND m.hidden_at IS NULL "
                          "ORDER BY m.created_at DESC LIMIT %(limit)s", {"fam": fam, "limit": limit}).fetchall()
     return {"items": rows}
 
@@ -804,6 +804,31 @@ def trash_media(body: Ids, fam: Fam):
         n = c.execute("UPDATE media SET deleted_at = now() WHERE owner_id = ANY(%s) AND id = ANY(%s) "
                       "AND deleted_at IS NULL", (fam, body.ids)).rowcount
     return {"trashed": n}
+
+
+@app.get("/api/v1/hidden")
+def list_hidden(fam: Fam):
+    """Photos masquées : hors chronologie, souvenirs et récents ; toujours dans albums, personnes et recherche."""
+    with pool.connection() as c:
+        rows = c.execute(f"SELECT {MEDIA_COLS}, m.hidden_at FROM media m WHERE {ready(fam, shared=False)} "
+                         "AND m.hidden_at IS NOT NULL ORDER BY m.taken_at DESC LIMIT 10000", {"fam": fam}).fetchall()
+    return {"items": rows}
+
+
+@app.post("/api/v1/media/hide")
+def hide_media(body: Ids, fam: Fam):
+    with pool.connection() as c:
+        n = c.execute("UPDATE media SET hidden_at = now() WHERE owner_id = ANY(%s) AND id = ANY(%s) "
+                      "AND hidden_at IS NULL", (fam, body.ids)).rowcount
+    return {"hidden": n}
+
+
+@app.post("/api/v1/media/unhide")
+def unhide_media(body: Ids, fam: Fam):
+    with pool.connection() as c:
+        n = c.execute("UPDATE media SET hidden_at = NULL WHERE owner_id = ANY(%s) AND id = ANY(%s) "
+                      "AND hidden_at IS NOT NULL", (fam, body.ids)).rowcount
+    return {"unhidden": n}
 
 
 @app.get("/api/v1/media/{media_id}")
@@ -1231,7 +1256,7 @@ def memories(fam: Fam):
     with pool.connection() as c:
         # shortcut: fenêtre en jour de l'année, sans gérer le passage du 31 décembre au 1er janvier
         rows = c.execute(
-            f"SELECT {MEDIA_COLS} FROM media m WHERE {ready(fam)} "
+            f"SELECT {MEDIA_COLS} FROM media m WHERE {ready(fam)} AND m.hidden_at IS NULL "
             "AND abs(extract(doy FROM m.taken_at) - %(doy)s) <= 3 "
             "AND extract(year FROM m.taken_at) < %(y)s ORDER BY m.taken_at DESC LIMIT 500",
             {"fam": fam, "doy": today.timetuple().tm_yday, "y": today.year}).fetchall()

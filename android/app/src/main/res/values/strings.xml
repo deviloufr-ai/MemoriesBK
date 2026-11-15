@@ -382,4 +382,21 @@
     <string name="more">Plus</string>
     <plurals name="photos_count"><item quantity="one">%1$s photo</item><item quantity="other">%1$s photos</item></plurals>
     <plurals name="members_count"><item quantity="one">%1$d membre</item><item quantity="other">%1$d membres</item></plurals>
+    <string name="hide">Masquer</string>
+    <string name="hide_not_backed_up">Seules les photos déjà sauvegardées peuvent être masquées</string>
+    <string name="hidden_photos">Photos masquées</string>
+    <string name="hidden_subtitle">Retirées de la chronologie et des souvenirs</string>
+    <string name="unhide_count">Afficher (%1$d)</string>
+    <string name="hidden_empty">Aucune photo masquée</string>
+    <string name="hidden_empty_text">Sélectionnez des photos dans l\'onglet Photos puis « Masquer » : elles quittent la chronologie et les souvenirs, mais restent dans les albums, les personnes et la recherche.</string>
+    <plurals name="items_hidden">
+        <item quantity="one">%d élément masqué</item>
+        <item quantity="many">%d éléments masqués</item>
+        <item quantity="other">%d éléments masqués</item>
+    </plurals>
+    <plurals name="items_unhidden">
+        <item quantity="one">%d élément de nouveau visible</item>
+        <item quantity="many">%d éléments de nouveau visibles</item>
+        <item quantity="other">%d éléments de nouveau visibles</item>
+    </plurals>
 </resources>

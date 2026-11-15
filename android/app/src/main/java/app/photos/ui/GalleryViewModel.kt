@@ -84,6 +84,8 @@ class GalleryViewModel @Inject constructor(
     val trashVersion = MutableStateFlow(0)
 
     private val remote = MutableStateFlow<List<RemoteMedia>>(emptyList())
+    /** SHA-256 des photos masquées : leur copie encore sur le téléphone ne doit pas revenir dans la chronologie. */
+    private val hiddenShas = MutableStateFlow<Set<String>>(emptySet())
     private var cursor: String? = null
     private var endReached = false
     private var loading = false
@@ -95,8 +97,8 @@ class GalleryViewModel @Inject constructor(
         list.filter { it.state == SyncState.SYNCED && it.serverId != null && isMediaStoreUri(Uri.parse(it.uri)) }
     }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    val rows: StateFlow<List<GridRow>> = combine(remote, local, zoom, mosaic) { r, l, z, m ->
-        sections(merge(r, l), z, mosaic = m && z == Zoom.DAY)
+    val rows: StateFlow<List<GridRow>> = combine(remote, local, hiddenShas, zoom, mosaic) { r, l, h, z, m ->
+        sections(merge(r, if (h.isEmpty()) l else l.filter { it.sha256 !in h }), z, mosaic = m && z == Zoom.DAY)
     }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /** (mois, index de sa première ligne) pour le sélecteur d'année et les onglets de mois. */
@@ -165,6 +167,43 @@ class GalleryViewModel @Inject constructor(
         remote.value = emptyList()
         loadMore()
         loadMemories()
+        loadHidden()
+    }
+
+    private suspend fun hiddenItems(): List<RemoteMedia>? =
+        call { api.hiddenList() }?.items?.also { list -> hiddenShas.value = list.mapTo(HashSet()) { it.sha256 } }
+
+    private fun loadHidden() = viewModelScope.launch { hiddenItems() }
+
+    suspend fun hiddenList(): List<GridItem> = hiddenItems()?.map(::remoteItem) ?: emptyList()
+
+    /** Masquer par lot : hors chronologie et souvenirs, toujours dans albums, personnes et recherche. */
+    fun hide(items: List<GridItem>) = viewModelScope.launch {
+        val ids = items.mapNotNull { it.remoteId }
+        if (ids.isEmpty()) {
+            error.value = context.getString(R.string.hide_not_backed_up)
+            return@launch
+        }
+        ids.chunked(500).forEach { batch -> call { api.hide(IdsReq(batch)) } ?: return@launch }
+        remote.update { list -> list.filter { it.id !in ids } }
+        memories.update { list -> list.map { m -> m.copy(items = m.items.filter { it.remoteId !in ids }) }.filter { it.items.isNotEmpty() } }
+        hiddenItems()
+        trashVersion.update { it + 1 }
+        undo.value = Undo(context.resources.getQuantityString(R.plurals.items_hidden, ids.size, ids.size)) {
+            ids.chunked(500).forEach { batch -> call { api.unhide(IdsReq(batch)) } }
+            hiddenItems()
+            trashVersion.update { it + 1 }
+            refresh()
+        }
+    }
+
+    fun unhide(items: List<GridItem>) = viewModelScope.launch {
+        val ids = items.mapNotNull { it.remoteId }
+        ids.chunked(500).forEach { batch -> call { api.unhide(IdsReq(batch)) } }
+        error.value = context.resources.getQuantityString(R.plurals.items_unhidden, ids.size, ids.size)
+        hiddenItems()
+        trashVersion.update { it + 1 }
+        refresh()
     }
 
     fun search(query: String) {

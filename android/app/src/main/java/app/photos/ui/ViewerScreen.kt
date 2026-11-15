@@ -52,6 +52,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material.icons.outlined.MoreHoriz
+import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
@@ -221,6 +222,9 @@ fun ViewerScreen(
                                 })
                             DropdownMenuItem(text = { Text(stringResource(R.string.album)) }, leadingIcon = { Icon(Icons.Outlined.LibraryAdd, null) },
                                 onClick = { more = false; addToAlbum(listOf(current)) })
+                            if (id != null) DropdownMenuItem(text = { Text(stringResource(R.string.hide)) },
+                                leadingIcon = { Icon(Icons.Outlined.VisibilityOff, null) },
+                                onClick = { more = false; vm.hide(listOf(current)); onClose() })
                             DropdownMenuItem(text = { Text(stringResource(R.string.delete)) }, leadingIcon = { Icon(Icons.Outlined.Delete, null) },
                                 onClick = { more = false; trash(listOf(current)) })
                         }

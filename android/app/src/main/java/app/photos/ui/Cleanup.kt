@@ -20,6 +20,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.CleaningServices
 import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -42,6 +43,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 
@@ -139,11 +141,39 @@ fun CleanupScreen(vm: GalleryViewModel, onOpen: (List<GridItem>, Int) -> Unit, t
 }
 
 /** Corbeille du serveur : tout est restaurable (le fichier n'est jamais effacé du NAS). */
+@Composable
+fun TrashScreen(vm: GalleryViewModel, onBack: () -> Unit) = SelectAndActScreen(
+    vm, stringResource(R.string.trash), load = vm::trashList, onBack = onBack,
+    actionLabel = { stringResource(R.string.restore_count, it) }, onAction = vm::restore,
+    emptyIcon = Icons.Outlined.DeleteOutline, emptyTitle = stringResource(R.string.trash_empty),
+    emptyText = stringResource(R.string.trash_empty_text),
+)
+
+/** Photos masquées : on en coche plusieurs et on les réaffiche d'un coup dans la chronologie. */
+@Composable
+fun HiddenScreen(vm: GalleryViewModel, onBack: () -> Unit) = SelectAndActScreen(
+    vm, stringResource(R.string.hidden_photos), load = vm::hiddenList, onBack = onBack,
+    actionLabel = { stringResource(R.string.unhide_count, it) }, onAction = vm::unhide,
+    emptyIcon = Icons.Outlined.VisibilityOff, emptyTitle = stringResource(R.string.hidden_empty),
+    emptyText = stringResource(R.string.hidden_empty_text),
+)
+
+/** Grille toujours en mode sélection, avec « Tout sélectionner » et une action sur la sélection. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TrashScreen(vm: GalleryViewModel, onBack: () -> Unit) {
+private fun SelectAndActScreen(
+    vm: GalleryViewModel,
+    title: String,
+    load: suspend () -> List<GridItem>,
+    onBack: () -> Unit,
+    actionLabel: @Composable (Int) -> String,
+    onAction: (List<GridItem>) -> Unit,
+    emptyIcon: ImageVector,
+    emptyTitle: String,
+    emptyText: String,
+) {
     val version by vm.trashVersion.collectAsState()
-    val items by produceState<List<GridItem>?>(null, version) { value = vm.trashList() }
+    val items by produceState<List<GridItem>?>(null, version) { value = load() }
     var selected by remember(items) { mutableStateOf(emptySet<String>()) }
     BackHandler(onBack = onBack)
 
@@ -151,7 +181,7 @@ fun TrashScreen(vm: GalleryViewModel, onBack: () -> Unit) {
         topBar = {
             TopAppBar(
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back)) } },
-                title = { Text(stringResource(R.string.trash)) },
+                title = { Text(title) },
             )
         },
         bottomBar = {
@@ -160,8 +190,8 @@ fun TrashScreen(vm: GalleryViewModel, onBack: () -> Unit) {
                 Row(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 12.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically) {
                     TextButton(onClick = { selected = list.map { it.key }.toSet() }) { Text(stringResource(R.string.select_all)) }
-                    Button(onClick = { vm.restore(list.filter { it.key in selected }) }, enabled = selected.isNotEmpty(),
-                        modifier = Modifier.weight(1f)) { Text(stringResource(R.string.restore_count, selected.size)) }
+                    Button(onClick = { onAction(list.filter { it.key in selected }) }, enabled = selected.isNotEmpty(),
+                        modifier = Modifier.weight(1f)) { Text(actionLabel(selected.size)) }
                 }
             }
         },
@@ -169,8 +199,7 @@ fun TrashScreen(vm: GalleryViewModel, onBack: () -> Unit) {
         val list = items
         when {
             list == null -> Text(stringResource(R.string.loading), Modifier.padding(padding).padding(24.dp))
-            list.isEmpty() -> EmptyState(Modifier.padding(padding), Icons.Outlined.DeleteOutline, stringResource(R.string.trash_empty),
-                stringResource(R.string.trash_empty_text))
+            list.isEmpty() -> EmptyState(Modifier.padding(padding), emptyIcon, emptyTitle, emptyText)
             else -> PhotoGrid(
                 list.map { GridRow.Cell(it) }, 3, rememberLazyGridState(), Modifier.padding(padding),
                 selected = selected, alwaysSelecting = true,

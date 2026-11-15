@@ -12,6 +12,8 @@ Schéma OpenAPI généré : `GET /openapi.json`, UI interactive sur `/docs`. Imp
 | PUT | `/uploads/{id}` | envoi d'un bloc (`Content-Range`) |
 | POST | `/uploads/{id}/complete` | finalise, déduplique, lance le pipeline |
 | GET | `/media/timeline` | grille chronologique, pagination par curseur |
+| POST | `/media/hide` · `/media/unhide` | masquer / réafficher des médias par lot (`{"ids": [...]}`, ≤ 500) |
+| GET | `/hidden` | médias masqués (hors chronologie, souvenirs et récents) |
 | GET | `/search/semantic?q=` | recherche CLIP en langage naturel |
 | GET | `/media/{id}/thumb/{sm\|md}` | miniature WebP (cache immuable) |
 | GET | `/media/{id}/original` | fichier original, `Range` supporté (seek vidéo) |

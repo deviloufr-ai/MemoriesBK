@@ -362,4 +362,17 @@
     <string name="more">その他</string>
     <plurals name="photos_count"><item quantity="other">%1$s 枚</item></plurals>
     <plurals name="members_count"><item quantity="other">%1$d 人</item></plurals>
+    <string name="hide">非表示</string>
+    <string name="hide_not_backed_up">バックアップ済みの写真のみ非表示にできます</string>
+    <string name="hidden_photos">非表示の写真</string>
+    <string name="hidden_subtitle">タイムラインと思い出から除外した写真</string>
+    <string name="unhide_count">再表示（%1$d）</string>
+    <string name="hidden_empty">非表示の写真はありません</string>
+    <string name="hidden_empty_text">写真タブで写真を選択して「非表示」を選ぶと、タイムラインと思い出から外れます。アルバム、人物、検索には引き続き表示されます。</string>
+    <plurals name="items_hidden">
+        <item quantity="other">%d 件を非表示にしました</item>
+    </plurals>
+    <plurals name="items_unhidden">
+        <item quantity="other">%d 件を再表示しました</item>
+    </plurals>
 </resources>

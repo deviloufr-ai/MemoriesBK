@@ -91,6 +91,7 @@ private sealed interface Overlay {
     data class Open(val collection: Collection) : Overlay
     data object Cleanup : Overlay
     data object Trash : Overlay
+    data object Hidden : Overlay
     data object Review : Overlay
 }
 
@@ -194,6 +195,7 @@ class MainActivity : ComponentActivity() {
                         2 -> MemoriesTab(vm, open)
                         3 -> ExploreTab(vm, open, openCollection)
                         else -> ManageTab(vm, onCleanup = { overlays += Overlay.Cleanup }, onTrash = { overlays += Overlay.Trash },
+                            onHidden = { overlays += Overlay.Hidden },
                             onReview = { overlays += Overlay.Review })
                     }
                 }
@@ -207,6 +209,7 @@ class MainActivity : ComponentActivity() {
                     )
                     Overlay.Cleanup -> CleanupScreen(vm, open, trash, onBack = { overlays.remove(overlay) })
                     Overlay.Trash -> TrashScreen(vm, onBack = { overlays.remove(overlay) })
+                    Overlay.Hidden -> app.photos.ui.HiddenScreen(vm, onBack = { overlays.remove(overlay) })
                     Overlay.Review -> app.photos.ui.ReviewScreen(vm, onBack = { overlays.remove(overlay) })
                     is Overlay.Viewer -> {
                         BackHandler { overlays.remove(overlay) }

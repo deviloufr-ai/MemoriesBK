@@ -627,7 +627,7 @@ def make_memory_video(video_id: str):
             "SELECT m.id, m.kind, m.storage_path, m.duration_ms, m.sharpness, m.taken_at, "
             "       (SELECT count(*) FROM faces f WHERE f.media_id = m.id AND f.person_id IS NOT NULL) AS faces "
             "FROM media m WHERE m.owner_id = ANY(%(fam)s) AND m.status = 'ready' AND m.deleted_at IS NULL "
-            "AND m.taken_at >= %(start)s AND m.taken_at < %(start)s + interval '1 month' AND m.edited_from IS NULL "
+            "AND m.hidden_at IS NULL AND m.taken_at >= %(start)s AND m.taken_at < %(start)s + interval '1 month' AND m.edited_from IS NULL "
             "AND (m.kind = 'video' AND m.duration_ms >= 3000 OR m.kind = 'image' "
             "     AND coalesce(m.sharpness, 100) >= 40 AND coalesce(m.brightness, 128) BETWEEN 28 AND 242) "
             "AND NOT EXISTS (SELECT 1 FROM media_tags mt JOIN tags t ON t.id = mt.tag_id WHERE mt.media_id = m.id "

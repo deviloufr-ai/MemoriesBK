@@ -109,6 +109,23 @@ def test_cleanup_keep_hides_photo(fam):
     assert m["blur"] not in {i["id"] for i in api.cleanup("blurry", f["f"]["a"], None)["items"]}
 
 
+def test_batch_hide_and_unhide(fam):
+    f, m = fam, fam["m"]
+    ids = [m["manual"], m["face_old"]]
+    timeline = lambda: {i["id"] for i in api.timeline(f["f"]["a"], None, 500)["items"]}
+    assert set(ids) <= timeline()
+    assert api.hide_media(api.Ids(ids=ids), f["f"]["a"])["hidden"] == 2
+    try:
+        assert not set(ids) & timeline()
+        assert set(ids) <= {i["id"] for i in api.list_hidden(f["f"]["a"])["items"]}
+        # toujours dans la page de la personne
+        assert m["face_old"] in {i["id"] for i in api.media_query(f["f"]["a"], person_id=f["person"], limit=100)["items"]}
+        assert api.hide_media(api.Ids(ids=[m["b_own"]]), f["f"]["o"])["hidden"] == 0  # autre famille
+    finally:
+        assert api.unhide_media(api.Ids(ids=ids), f["f"]["a"])["unhidden"] == 2
+    assert set(ids) <= timeline()
+
+
 def test_merge_requires_confirmation_and_undo(fam):
     f = fam
     with api.pool.connection() as c:
