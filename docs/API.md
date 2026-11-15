@@ -13,6 +13,7 @@ Schéma OpenAPI généré : `GET /openapi.json`, UI interactive sur `/docs`. Imp
 | POST | `/uploads/{id}/complete` | finalise, déduplique, lance le pipeline |
 | GET | `/media/timeline` | grille chronologique, pagination par curseur |
 | POST | `/media/hide` · `/media/unhide` | masquer / réafficher des médias par lot (`{"ids": [...]}`, ≤ 500) |
+| PUT | `/app/apk?version=` | dépôt d'un APK signé (en-tête `X-Publish-Token`, cf. `APK_PUBLISH_TOKEN`) ; servi ensuite sur `/MemoriesBK.apk` |
 | GET | `/hidden` | médias masqués (hors chronologie, souvenirs et récents) |
 | GET | `/search/semantic?q=` | recherche CLIP en langage naturel |
 | GET | `/media/{id}/thumb/{sm\|md}` | miniature WebP (cache immuable) |

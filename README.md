@@ -67,4 +67,4 @@ docker compose up -d --build
 docker compose exec api python api.py create-user moi@example.com
 ```
 
-Application Android : `android/publish.sh` compile l'APK et le publie sur le serveur. La clé de signature (`*.jks`, `keystore.properties`) n'est pas versionnée.
+Application Android : publiée automatiquement par GitHub Actions ([.github/workflows/apk.yml](.github/workflows/apk.yml)) à chaque push sur `main` qui touche `android/` ; `android/publish.sh` fait la même chose depuis la maison. La clé de signature (`*.jks`, `keystore.properties`) n'est pas versionnée : elle est dans les secrets du dépôt.

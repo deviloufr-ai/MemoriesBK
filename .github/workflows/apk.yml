@@ -1,0 +1,91 @@
+# Compile l'APK release signé et le publie sur le serveur : les téléphones proposent la mise à jour au lancement.
+# Secrets du dépôt (Settings › Secrets and variables › Actions) :
+#   ANDROID_KEYSTORE_BASE64   base64 -w0 memoriesbk-release.jks
+#   ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD   (valeurs de android/keystore.properties)
+#   APK_PUBLISH_TOKEN         même valeur que dans le .env du serveur
+# Le serveur doit déjà faire tourner le code de ce commit (./deploy.sh) si server/ ou db/ ont changé :
+# sinon la publication s'arrête, et on la relance ensuite à la main (Actions › APK › Run workflow).
+name: APK
+on:
+  push:
+    branches: [main]
+    paths: ["android/**", ".github/workflows/apk.yml"]
+  workflow_dispatch:
+
+concurrency: apk-publish
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      SERVER_URL: ${{ vars.SERVER_URL || 'https://memoriesbk.tail03b1de.ts.net' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # pour comparer avec la révision déployée sur le serveur
+
+      - name: Secrets présents ?
+        env:
+          KS: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          TOKEN: ${{ secrets.APK_PUBLISH_TOKEN }}
+        run: |
+          if [ -z "$KS" ] || [ -z "$TOKEN" ]; then
+            echo "::error::Secrets ANDROID_KEYSTORE_BASE64 / APK_PUBLISH_TOKEN manquants (voir l'en-tête de apk.yml)"
+            exit 1
+          fi
+
+      - name: Le serveur a-t-il le code de ce commit ?
+        run: |
+          rev=$(curl -sf --max-time 20 "$SERVER_URL/api/v1/health" | jq -r .revision) || {
+            echo "::error::Serveur injoignable ($SERVER_URL)"; exit 1; }
+          echo "Révision déployée : $rev"
+          if ! git cat-file -e "$rev^{commit}" 2>/dev/null; then
+            echo "::error::Révision serveur $rev inconnue : lancer ./deploy.sh puis relancer ce workflow"; exit 1
+          fi
+          if ! git diff --quiet "$rev" HEAD -- server db; then
+            git diff --stat "$rev" HEAD -- server db
+            echo "::error::server/ ou db/ ont changé depuis le déploiement : lancer ./deploy.sh puis relancer ce workflow"
+            exit 1
+          fi
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Clé de signature
+        working-directory: android
+        env:
+          KS: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          echo "$KS" | base64 -d > release.jks
+          printf 'storeFile=release.jks\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
+            "$KS_PASS" "$KEY_ALIAS" "$KEY_PASS" > keystore.properties
+
+      - name: Compilation
+        working-directory: android
+        run: ./gradlew --no-daemon assembleRelease
+
+      - name: Publication
+        working-directory: android
+        env:
+          TOKEN: ${{ secrets.APK_PUBLISH_TOKEN }}
+        run: |
+          apk=app/build/outputs/apk/release/app-release.apk
+          # Une APK non signée (clé absente) ne pourrait pas mettre à jour l'app installée
+          [ -f "$apk" ] || { echo "::error::APK release signée introuvable"; ls -R app/build/outputs/apk; exit 1; }
+          version=$(cat app/build/apk-version.txt)
+          curl -sSf --max-time 600 -X PUT -H "X-Publish-Token: $TOKEN" \
+            -H "Content-Type: application/vnd.android.package-archive" \
+            --data-binary "@$apk" "$SERVER_URL/api/v1/app/apk?version=$version"
+          echo
+          echo "Publié : version $version"
+
+      - name: Nettoyage de la clé
+        if: always()
+        working-directory: android
+        run: rm -f release.jks keystore.properties

@@ -2,6 +2,7 @@
 Créer un compte : python api.py create-user moi@example.com
 Contrat détaillé : docs/API.md (OpenAPI interactif sur /docs).
 """
+import hmac
 import mimetypes
 import os
 import sys
@@ -30,7 +31,7 @@ import migrate
 from metadata import media_mime, safe_join, visible_dir
 from ml import CLIP_MODEL_ID  # constante seulement : importer ml ne charge aucun modèle
 from tasks import (DSN, REDIS_URL, IMPORT_EXCLUDE, IMPORT_ROOT, PHOTOS_DIR, QUARANTINE_DIR, embed_query, import_folder, ingest,
-                   part_path, thumb_path, MEMORY_VIDEO_DIR, queue_memory_video)
+                   part_path, thumb_path, MEMORY_VIDEO_DIR, THUMBS_DIR, queue_memory_video)
 from tasks import enhance as enhance_task, refresh_pet_media
 from util import decode_cursor, encode_cursor, hash_password, parse_content_range, verify_password
 
@@ -1341,6 +1342,71 @@ def get_original(media_id: UUID, fam: Fam):
     # FileResponse gère l'en-tête Range : lecture vidéo avec seek dans ExoPlayer
     return FileResponse(PHOTOS_DIR / row["storage_path"], media_type=row["mime_type"],
                         headers={"Cache-Control": "private, max-age=31536000, immutable"})
+
+
+# ---------- APK Android publié (GitHub Actions ou android/publish.sh) ----------
+# Rangé dans /thumbs (volume persistant) : survit aux reconstructions de l'image, contrairement à /app/web.
+APK_DIR = THUMBS_DIR / "app"
+APK_PUBLISH_TOKEN = os.environ.get("APK_PUBLISH_TOKEN", "")
+APK_MAX = 300 * 2**20
+_WEB = Path(__file__).with_name("web")
+
+
+def _apk_file(name: str) -> Path:
+    """Dernier APK publié par l'API, sinon l'ancien emplacement (copie dans web/ par docker compose cp)."""
+    p = APK_DIR / name
+    return p if p.exists() else _WEB / name
+
+
+@app.get("/MemoriesBK.version")
+def apk_version():
+    p = _apk_file("MemoriesBK.version")
+    if not p.exists():
+        raise HTTPException(404, "aucun APK publié")
+    return Response(p.read_text().strip(), media_type="text/plain", headers={"Cache-Control": "no-cache"})
+
+
+@app.get("/MemoriesBK.apk")
+def apk_file():
+    p = _apk_file("MemoriesBK.apk")
+    if not p.exists():
+        raise HTTPException(404, "aucun APK publié")
+    return FileResponse(p, media_type="application/vnd.android.package-archive", filename="MemoriesBK.apk",
+                        headers={"Cache-Control": "no-cache"})
+
+
+@app.put("/api/v1/app/apk")
+async def publish_apk(request: Request, version: int = Query(ge=1),
+                      x_publish_token: Annotated[str, Header()] = ""):
+    """Dépose un APK signé ; l'app installée propose la mise à jour au prochain lancement.
+    Jeton APK_PUBLISH_TOKEN (.env) : sans lui la route est fermée. Une version plus ancienne est refusée."""
+    if not APK_PUBLISH_TOKEN or not hmac.compare_digest(x_publish_token.encode(), APK_PUBLISH_TOKEN.encode()):
+        raise HTTPException(403, "jeton de publication invalide")
+    if _too_many("apk-publish", 10, 3600):
+        raise HTTPException(429, "trop de publications")
+    current = _apk_file("MemoriesBK.version")
+    if current.exists() and version < int(current.read_text().strip() or 0):
+        raise HTTPException(409, f"version {version} plus ancienne que celle publiée")
+    APK_DIR.mkdir(parents=True, exist_ok=True)
+    tmp = APK_DIR / f".upload-{uuid.uuid4().hex}.apk"
+    size = 0
+    try:
+        with tmp.open("wb") as f:
+            async for chunk in request.stream():
+                size += len(chunk)
+                if size > APK_MAX:
+                    raise HTTPException(413, "APK trop gros")
+                await run_in_threadpool(f.write, chunk)
+        with tmp.open("rb") as f:
+            if size < 1024 or f.read(4) != b"PK\x03\x04":  # un APK est une archive ZIP
+                raise HTTPException(400, "ce n'est pas un APK")
+        tmp.replace(APK_DIR / "MemoriesBK.apk")  # rename atomique : jamais d'APK à moitié écrit servi
+    finally:
+        tmp.unlink(missing_ok=True)
+    vtmp = APK_DIR / ".version.tmp"
+    vtmp.write_text(str(version))
+    vtmp.replace(APK_DIR / "MemoriesBK.version")  # après l'APK : la version annoncée est toujours téléchargeable
+    return {"version": version, "size": size}
 
 
 # Version navigateur (server/web) : montée en dernier pour ne masquer aucune route /api.

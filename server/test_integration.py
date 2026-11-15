@@ -171,3 +171,22 @@ def test_review_face_answer(fam):
 def test_health():
     h = api.health()
     assert h["db"] and h["redis"]
+
+
+def test_publish_apk(monkeypatch, tmp_path):
+    from fastapi.testclient import TestClient
+    monkeypatch.setattr(api, "APK_DIR", tmp_path)
+    monkeypatch.setattr(api, "APK_PUBLISH_TOKEN", "secret-test")
+    api._redis.delete("apk-publish")
+    client = TestClient(api.app)
+    apk = b"PK\x03\x04" + os.urandom(4096)
+    put = lambda v, body=apk, tok="secret-test": client.put(f"/api/v1/app/apk?version={v}", content=body,
+                                                            headers={"X-Publish-Token": tok})
+    assert put(5, tok="faux").status_code == 403
+    assert put(5, body=b"pas un apk" * 200).status_code == 400
+    assert put(5).status_code == 200
+    assert put(4).status_code == 409  # jamais de retour en arrière
+    assert client.get("/MemoriesBK.version").text == "5"
+    assert client.get("/MemoriesBK.apk").content == apk
+    assert not list(tmp_path.glob(".upload-*"))
+    api._redis.delete("apk-publish")
