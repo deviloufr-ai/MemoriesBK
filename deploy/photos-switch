@@ -1,0 +1,71 @@
+#!/bin/sh
+# Bascule MemoriesBK entre la VM Freebox (toujours allumée) et ce serveur (allumé de temps en temps).
+# Les téléphones parlent toujours à la Freebox : quand ce serveur est actif, elle relaie son port 8080 ici
+# (conteneur photos-forward). Les photos sont sur le NAS, commun aux deux : seuls la base, les miniatures,
+# la file Redis et ~/photos (code, .env, APK) sont recopiés à chaque bascule.
+#   photos-switch takeover   au démarrage (photos-active.service)
+#   photos-switch handback   à l'arrêt propre
+# /srv/photos/ACTIVE sur la Freebox dit qui a les données à jour. Après un arrêt brutal de ce serveur,
+# la Freebox reste en relais (ses données sont périmées) jusqu'au prochain démarrage d'ici.
+# Pour repartir sur la Freebox sans ce serveur (perd tout ce qui a changé depuis la bascule) :
+#   ssh freebox@192.168.1.41 'docker rm -f photos-forward; echo freebox | sudo tee /srv/photos/ACTIVE; cd photos && docker compose up -d'
+set -e
+FB=freebox@192.168.1.41
+ME=192.168.1.58
+LOCAL=/home/devil/photos
+SSH="ssh -o BatchMode=yes -o ConnectTimeout=10"
+DIRS="/srv/photos/postgres /srv/photos/thumbs /var/lib/docker/volumes/photos_redis/_data"
+
+fb() { $SSH "$FB" "$@"; }
+rs() { rsync -a --delete -e "$SSH" --rsync-path="sudo rsync" "$@"; }
+local_compose() { cd "$LOCAL" && docker compose "$@"; }
+
+health() {
+  i=0
+  until curl -sf localhost:8080/api/v1/health >/dev/null; do
+    i=$((i + 1)); [ $i -lt 100 ] || { echo "API locale injoignable" >&2; return 1; }
+    sleep 3
+  done
+}
+
+pull() {
+  for d in $DIRS; do mkdir -p "$d"; rs "$FB:$d/" "$d/"; done
+  rs "$FB:/home/freebox/photos/" "$LOCAL/" && chown -R devil:devil "$LOCAL"
+}
+
+push() {
+  for d in $DIRS; do rs "$d/" "$FB:$d/"; done
+  rs "$LOCAL/" "$FB:/home/freebox/photos/" && fb 'sudo chown -R freebox:freebox photos'
+}
+
+takeover() {
+  state=$(fb 'cat /srv/photos/ACTIVE 2>/dev/null || echo freebox')
+  if [ "$state" != new ]; then
+    [ -f "$LOCAL/docker-compose.yml" ] && local_compose stop   # Docker a pu relancer d'anciens conteneurs au boot
+    pull                                                        # à chaud : la passe finale ne copie que la différence
+    local_compose build -q worker api                           # pendant que la Freebox sert encore
+    trap "fb 'cd photos && docker compose start'" EXIT          # échec avant le marqueur : la Freebox repart
+    fb 'cd photos && docker compose stop'
+    pull
+    fb 'echo new | sudo tee /srv/photos/ACTIVE >/dev/null'
+    trap - EXIT
+  fi
+  local_compose up -d --build --remove-orphans
+  health
+  fb "docker rm -f photos-forward >/dev/null 2>&1; docker run -d --name photos-forward --restart unless-stopped -p 8080:8080 alpine/socat TCP-LISTEN:8080,fork,reuseaddr TCP:$ME:8080 >/dev/null"
+  echo "MemoriesBK actif ici"
+}
+
+handback() {
+  # Freebox injoignable : on garde les données ici, le prochain takeover repartira d'ici
+  [ "$(fb 'cat /srv/photos/ACTIVE 2>/dev/null' || true)" = new ] || { echo "Freebox injoignable ou déjà active"; exit 0; }
+  local_compose stop
+  push
+  fb 'docker rm -f photos-forward >/dev/null; echo freebox | sudo tee /srv/photos/ACTIVE >/dev/null; cd photos && nohup docker compose up -d --build >/dev/null 2>&1 </dev/null &'
+  echo "MemoriesBK rendu à la Freebox"
+}
+
+case "$1" in
+  takeover|handback) "$1" ;;
+  *) echo "usage: $0 takeover|handback" >&2; exit 2 ;;
+esac
