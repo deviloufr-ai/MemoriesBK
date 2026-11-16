@@ -176,6 +176,7 @@ def test_health():
 def test_publish_apk(monkeypatch, tmp_path):
     from fastapi.testclient import TestClient
     monkeypatch.setattr(api, "APK_DIR", tmp_path)
+    monkeypatch.setattr(api, "_WEB", tmp_path)  # sinon l'APK réellement publié (web/) fait refuser la version 5
     monkeypatch.setattr(api, "APK_PUBLISH_TOKEN", "secret-test")
     api._redis.delete("apk-publish")
     client = TestClient(api.app)
@@ -266,17 +267,22 @@ def test_search_big_model_only_when_ready(fam, search_media, monkeypatch):
     assert len(items) == 3
 
 
-def test_search_backfill_marks_ready(fam, search_media):
+def test_search_backfill_marks_ready(fam, search_media, monkeypatch):
     import tasks
 
     ids = search_media
+    monkeypatch.setattr(tasks, "SEARCH_BACKFILL_QUEUE", 10**9)  # file ml réelle peut-être pleine
     with api.pool.connection() as c:
-        todo = tasks._search_backfill(c, api.CLIP_MODEL_ID, "test/big")
+        # Modèle de base propre au test : la vraie bibliothèque (même base) ne compte pas dans la couverture
+        for i, mid in enumerate(ids):
+            c.execute("INSERT INTO embeddings (media_id, model, embedding) VALUES (%s, 'test/base', %s)",
+                      (mid, _unit(512, i)))
+        todo = tasks._search_backfill(c, "test/base", "test/big")
         assert [r["id"] for r in todo] == [ids[2]]
         assert api._redis.get(tasks.SEARCH_READY_KEY) is None   # 1 sur 3 manquant : pas prêt
         c.execute("INSERT INTO search_embeddings (media_id, model, embedding) VALUES (%s, 'test/big', %s)",
                   (ids[2], _unit(1024, 12)))
-        assert tasks._search_backfill(c, api.CLIP_MODEL_ID, "test/big") == []
+        assert tasks._search_backfill(c, "test/base", "test/big") == []
         assert api._redis.get(tasks.SEARCH_READY_KEY) == b"test/big"
 
 
