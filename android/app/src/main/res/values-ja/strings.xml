@@ -372,6 +372,17 @@
     <plurals name="items_hidden">
         <item quantity="other">%d 件を非表示にしました</item>
     </plurals>
+    <string name="family_hidden_photos">家族から外した写真</string>
+    <string name="family_hidden_subtitle">家族タブに表示されなくなった写真</string>
+    <string name="family_unhide_count">家族に戻す（%1$d）</string>
+    <string name="family_hidden_empty">家族から外した写真はありません</string>
+    <string name="family_hidden_empty_text">家族タブで写真を選択して「家族から外す」を選ぶと、共有した人物やペットの写真でも、全員の家族タブから外れます。写真は削除されません。</string>
+    <plurals name="items_removed_family">
+        <item quantity="other">%d 件を家族から外しました</item>
+    </plurals>
+    <plurals name="items_back_in_family">
+        <item quantity="other">%d 件を家族に戻しました</item>
+    </plurals>
     <plurals name="items_unhidden">
         <item quantity="other">%d 件を再表示しました</item>
     </plurals>

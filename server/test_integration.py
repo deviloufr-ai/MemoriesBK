@@ -63,6 +63,12 @@ def test_photos_tab_shows_only_my_photos(fam):
     assert ids == {fam["m"]["b_own"]}
 
 
+def _family_reset(media_ids):
+    with api.pool.connection() as c:
+        c.execute("DELETE FROM family_shared WHERE media_id = ANY(%s)", (media_ids,))
+        c.execute("DELETE FROM family_hidden WHERE media_id = ANY(%s)", (media_ids,))
+
+
 def test_manual_share_visibility_and_removal(fam):
     f, m = fam, fam["m"]
     assert api.family_add(api.Ids(ids=[m["manual"]]), f["f"]["a"])["added"] == 1
@@ -73,9 +79,39 @@ def test_manual_share_visibility_and_removal(fam):
         api._owned(m["manual"], f["f"]["r"], shared=True)  # le membre limité peut ouvrir la photo
         with pytest.raises(HTTPException):
             api._owned(m["manual"], f["f"]["o"], shared=True)
-        assert api.family_remove(api.Ids(ids=[m["manual"]]), f["f"]["b"])["removed"] == 0  # pas celui qui a partagé
+        with pytest.raises(HTTPException):  # le membre limité ne retire rien pour les autres
+            api.family_remove(api.Ids(ids=[m["manual"]]), f["f"]["r"])
+        # Tout membre peut retirer, pour toute la famille, une photo qu'il n'a pas partagée
+        assert api.family_remove(api.Ids(ids=[m["manual"]]), f["f"]["b"])["removed"] == 1
+        for who in ("a", "b", "r"):
+            assert m["manual"] not in visible(f, who)
+        with pytest.raises(HTTPException):
+            api._owned(m["manual"], f["f"]["r"], shared=True)
+        assert m["manual"] in {i["id"] for i in api.family_hidden_list(f["f"]["a"])["items"]}
+        assert api.family_unhide(api.Ids(ids=[m["manual"]]), f["f"]["a"])["unhidden"] == 1
+        assert m["manual"] in visible(f, "r")
+        assert not api.family_hidden_list(f["f"]["a"])["items"]
     finally:
-        assert api.family_remove(api.Ids(ids=[m["manual"]]), f["f"]["a"])["removed"] == 1
+        _family_reset([m["manual"]])
+
+
+def test_remove_photo_shared_by_person_rule(fam):
+    """Photo arrivée par une personne partagée : retirable seule, la règle continue pour les autres photos."""
+    f, m = fam, fam["m"]
+    api.family_people_add(api.PersonReq(person_id=f["person"]), f["f"]["a"])
+    try:
+        assert api.family_remove(api.Ids(ids=[m["face_old"]]), f["f"]["b"])["removed"] == 1
+        for who in ("a", "b", "r"):
+            seen = visible(f, who)
+            assert m["face_old"] not in seen and m["face_new"] in seen
+        assert [i["id"] for i in api.family_hidden_list(f["f"]["b"])["items"]] == [m["face_old"]]
+        # Partager à nouveau explicitement annule le retrait
+        api.family_add(api.Ids(ids=[m["face_old"]]), f["f"]["a"])
+        assert m["face_old"] in visible(f, "b")
+        assert not api.family_hidden_list(f["f"]["b"])["items"]
+    finally:
+        api.family_people_remove(f["person"], f["f"]["a"])
+        _family_reset([m["face_old"], m["face_new"]])
 
 
 def test_person_rule_with_from_year(fam):

@@ -64,6 +64,13 @@ interface PhotosApi {
     @POST("api/v1/family/media/remove")
     suspend fun familyRemove(@Body body: IdsReq): Response<Unit>
 
+    /** Photos retirées de Famille (par n'importe quel membre), réaffichables. */
+    @GET("api/v1/family/hidden")
+    suspend fun familyHiddenList(): SearchRes
+
+    @POST("api/v1/family/media/unhide")
+    suspend fun familyUnhide(@Body body: IdsReq): Response<Unit>
+
     @GET("api/v1/pets")
     suspend fun pets(): PetsRes
 

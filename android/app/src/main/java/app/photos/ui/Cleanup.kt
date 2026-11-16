@@ -20,6 +20,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.CleaningServices
 import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material.icons.outlined.GroupRemove
 import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -156,6 +157,15 @@ fun HiddenScreen(vm: GalleryViewModel, onBack: () -> Unit) = SelectAndActScreen(
     actionLabel = { stringResource(R.string.unhide_count, it) }, onAction = vm::unhide,
     emptyIcon = Icons.Outlined.VisibilityOff, emptyTitle = stringResource(R.string.hidden_empty),
     emptyText = stringResource(R.string.hidden_empty_text),
+)
+
+/** Photos retirées de Famille : on les remet dans l'onglet Famille, pour toute la famille. */
+@Composable
+fun FamilyHiddenScreen(vm: GalleryViewModel, onBack: () -> Unit) = SelectAndActScreen(
+    vm, stringResource(R.string.family_hidden_photos), load = vm::familyHiddenList, onBack = onBack,
+    actionLabel = { stringResource(R.string.family_unhide_count, it) }, onAction = vm::familyUnhide,
+    emptyIcon = Icons.Outlined.GroupRemove, emptyTitle = stringResource(R.string.family_hidden_empty),
+    emptyText = stringResource(R.string.family_hidden_empty_text),
 )
 
 /** Grille toujours en mode sélection, avec « Tout sélectionner » et une action sur la sélection. */

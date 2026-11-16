@@ -277,10 +277,33 @@ class GalleryViewModel @Inject constructor(
     }
 
     /** Le serveur ne retire que ce que l'utilisateur a lui-même partagé (ou tout, pour l'administrateur). */
+    /** Retire de Famille pour toute la famille (même une photo arrivée par une personne partagée), avec Annuler. */
     fun removeFromFamily(items: List<GridItem>) = viewModelScope.launch {
-        items.mapNotNull { it.remoteId }.chunked(500).forEach { batch -> call { api.familyRemove(IdsReq(batch)) } }
+        val ids = items.mapNotNull { it.remoteId }
+        if (ids.isEmpty()) return@launch
+        ids.chunked(500).forEach { batch -> call { api.familyRemove(IdsReq(batch)) } ?: return@launch }
+        familyMedia.update { list -> list?.filter { it.remoteId !in ids } }
+        trashVersion.update { it + 1 }
+        undo.value = Undo(context.resources.getQuantityString(R.plurals.items_removed_family, ids.size, ids.size)) {
+            ids.chunked(500).forEach { batch -> call { api.familyUnhide(IdsReq(batch)) } }
+            trashVersion.update { it + 1 }
+            loadFamilyMedia()
+        }
         loadFamilyMedia()
     }
+
+    suspend fun familyHiddenList(): List<GridItem> = call { api.familyHiddenList() }?.items?.map(::remoteItem) ?: emptyList()
+
+    fun familyUnhide(items: List<GridItem>) = viewModelScope.launch {
+        val ids = items.mapNotNull { it.remoteId }
+        ids.chunked(500).forEach { batch -> call { api.familyUnhide(IdsReq(batch)) } }
+        error.value = context.resources.getQuantityString(R.plurals.items_back_in_family, ids.size, ids.size)
+        trashVersion.update { it + 1 }
+        loadFamilyMedia()
+    }
+
+    /** Membre à accès limité : ne retire rien de Famille pour les autres (le serveur refuse aussi). */
+    val familyRestricted: Boolean get() = family.value?.members?.firstOrNull { it.me }?.restricted == true
 
     suspend fun cleanup(kind: String, query: String?): List<Pair<GridItem, Boolean>> =
         call { api.cleanup(kind, query) }?.items?.map { remoteItem(it) to it.suggested } ?: emptyList()

@@ -136,7 +136,11 @@ FAMILY_ROWS = ("SELECT fs.media_id, fs.created_at AS added, fs.shared_by FROM fa
                "JOIN pet_media pm ON pm.pet_id = fsp.pet_id JOIN media pmm ON pmm.id = pm.media_id "
                f"JOIN users s ON s.id = fsp.added_by WHERE {_IN_FAMILY} "
                "AND (fsp.from_year IS NULL OR pmm.taken_at >= make_date(fsp.from_year, 1, 1))")
-FAMILY_SHARED = "SELECT media_id FROM (" + FAMILY_ROWS + ") fr"
+# Retirée de Famille par un membre (family_hidden) : exclue, quelle que soit la raison de sa présence. {col} : media_id.
+NOT_FAMILY_HIDDEN = ("NOT EXISTS (SELECT 1 FROM family_hidden fh JOIN users s ON s.id = fh.hidden_by "
+                     "WHERE fh.media_id = {col} AND " + _IN_FAMILY + ")")
+FAMILY_SHARED = ("SELECT media_id FROM (" + FAMILY_ROWS + ") fr WHERE "
+                 + NOT_FAMILY_HIDDEN.replace("{col}", "fr.media_id"))
 
 
 def require_admin(fam: Family) -> None:
@@ -543,7 +547,8 @@ def family_media(fam: Fam, limit: int = Query(30000, ge=1, le=30000)):
         rows = c.execute(
             "SELECT * FROM (SELECT DISTINCT ON (m.id) " + MEDIA_COLS + ", x.added AS created_at, x.shared_by "
             f"FROM ({FAMILY_ROWS.format(uid=fam.uid)}) x JOIN media m ON m.id = x.media_id "
-            "WHERE m.status = 'ready' AND m.deleted_at IS NULL ORDER BY m.id, x.added) t "
+            "WHERE m.status = 'ready' AND m.deleted_at IS NULL "
+            f"AND {NOT_FAMILY_HIDDEN.replace('{col}', 'm.id').format(uid=fam.uid)} ORDER BY m.id, x.added) t "
             # shortcut: pas de curseur (30 000 max, ~7 Mo) ; paginer comme la timeline si Famille dépasse ça
             "ORDER BY taken_at DESC LIMIT %(limit)s", {"limit": limit}).fetchall()
     return {"items": rows}
@@ -615,22 +620,57 @@ def family_people_remove(person_id: UUID, fam: Fam):
 
 @app.post("/api/v1/family/media")
 def family_add(body: Ids, fam: Fam):
-    """Chacun peut partager ce qu'il voit (ses photos ou celles de la famille)."""
-    with pool.connection() as c:
+    """Chacun peut partager ce qu'il voit (ses photos ou celles de la famille). Un partage explicite annule un retrait."""
+    with pool.connection() as c, c.transaction():
         n = c.execute(f"INSERT INTO family_shared (media_id, shared_by) SELECT m.id, %(me)s FROM media m "
                       f"WHERE m.id = ANY(%(ids)s) AND {ready(fam)} ON CONFLICT DO NOTHING",
                       {"fam": fam, "me": fam.uid, "ids": body.ids}).rowcount
+        _family_unhide(c, fam, body.ids)
     return {"added": n}
+
+
+def _family_member(fam: Family) -> None:
+    if fam.restricted:  # il ne voit qu'une partie de Famille : il ne la modifie pas pour les autres
+        raise HTTPException(403, "réservé aux membres de la famille")
+
+
+def _family_unhide(c, fam: Family, ids) -> int:
+    return c.execute("DELETE FROM family_hidden fh USING users s WHERE s.id = fh.hidden_by AND fh.media_id = ANY(%s) "
+                     f"AND {_IN_FAMILY.format(uid=fam.uid)}", (ids,)).rowcount
 
 
 @app.post("/api/v1/family/media/remove")
 def family_remove(body: Ids, fam: Fam):
-    """Retrait : celui qui a partagé, ou l'administrateur."""
+    """Retire de Famille, pour toute la famille, des photos de l'onglet : partagées une à une, ou arrivées par une
+    personne ou un animal partagé. Rien n'est effacé : réversible (GET /family/hidden, POST /family/media/unhide)."""
+    _family_member(fam)
     with pool.connection() as c:
-        n = c.execute(f"DELETE FROM family_shared WHERE media_id = ANY(%(ids)s) "
-                      f"AND media_id IN ({FAMILY_SHARED.format(uid=fam.uid)}) AND (shared_by = %(me)s OR %(admin)s)",
-                      {"ids": body.ids, "me": fam.uid, "admin": fam.admin}).rowcount
+        n = c.execute(f"INSERT INTO family_hidden (media_id, hidden_by) SELECT DISTINCT fr.media_id, %(me)s "
+                      f"FROM ({FAMILY_SHARED.format(uid=fam.uid)}) fr WHERE fr.media_id = ANY(%(ids)s) "
+                      "ON CONFLICT DO NOTHING", {"ids": body.ids, "me": fam.uid}).rowcount
     return {"removed": n}
+
+
+@app.get("/api/v1/family/hidden")
+def family_hidden_list(fam: Fam):
+    """Photos retirées de Famille qui y seraient sinon (les plus récemment retirées d'abord)."""
+    _family_member(fam)
+    with pool.connection() as c:
+        rows = c.execute(
+            f"SELECT {MEDIA_COLS}, max(fh.created_at) AS hidden_at FROM family_hidden fh "
+            "JOIN users s ON s.id = fh.hidden_by JOIN media m ON m.id = fh.media_id "
+            f"WHERE {_IN_FAMILY.format(uid=fam.uid)} AND {ready(fam)} "
+            f"AND m.id IN (SELECT media_id FROM ({FAMILY_ROWS.format(uid=fam.uid)}) x) "
+            "GROUP BY m.id ORDER BY max(fh.created_at) DESC LIMIT 10000", {"fam": fam}).fetchall()
+    return {"items": rows}
+
+
+@app.post("/api/v1/family/media/unhide")
+def family_unhide(body: Ids, fam: Fam):
+    _family_member(fam)
+    with pool.connection() as c:
+        n = _family_unhide(c, fam, body.ids)
+    return {"unhidden": n}
 
 
 # ---------- Animaux nommés (photos retrouvées par tasks.refresh_pet_media) ----------

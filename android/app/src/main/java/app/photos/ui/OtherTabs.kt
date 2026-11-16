@@ -122,7 +122,11 @@ fun FamilyTab(vm: GalleryViewModel, onOpen: (List<GridItem>, Int) -> Unit) {
             title = { Text(selected.size.toString()) },
             navigationIcon = { IconButton(onClick = { selected = emptySet() }) { Icon(Icons.Outlined.Close, stringResource(R.string.cancel)) } },
             actions = {
-                IconButton(onClick = { vm.removeFromFamily(cells.filter { it.key in selected }) }) {
+                val family by vm.family.collectAsState()
+                if (family != null && !vm.familyRestricted) IconButton(onClick = {
+                    vm.removeFromFamily(cells.filter { it.key in selected })
+                    selected = emptySet()
+                }) {
                     Icon(Icons.Outlined.GroupRemove, stringResource(R.string.remove_from_family))
                 }
             },
@@ -332,7 +336,8 @@ fun MemoriesTab(vm: GalleryViewModel, onOpen: (List<GridItem>, Int) -> Unit) {
 /** Gérer : compte, sauvegarde et accès à la version web. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ManageTab(vm: GalleryViewModel, onCleanup: () -> Unit, onTrash: () -> Unit, onHidden: () -> Unit, onReview: () -> Unit) {
+fun ManageTab(vm: GalleryViewModel, onCleanup: () -> Unit, onTrash: () -> Unit, onHidden: () -> Unit,
+              onFamilyHidden: () -> Unit, onReview: () -> Unit) {
     val s by vm.syncSettings.collectAsState()
     val backup by vm.backup.collectAsState()
     val family by vm.family.collectAsState()
@@ -415,6 +420,14 @@ fun ManageTab(vm: GalleryViewModel, onCleanup: () -> Unit, onTrash: () -> Unit, 
                     headlineContent = { Text(stringResource(R.string.hidden_photos)) },
                     supportingContent = { Text(stringResource(R.string.hidden_subtitle)) },
                     modifier = Modifier.clickable(onClick = onHidden),
+                )
+            }
+            if (family != null && !vm.familyRestricted) item {
+                ListItem(
+                    leadingContent = { Icon(Icons.Outlined.GroupRemove, null) },
+                    headlineContent = { Text(stringResource(R.string.family_hidden_photos)) },
+                    supportingContent = { Text(stringResource(R.string.family_hidden_subtitle)) },
+                    modifier = Modifier.clickable(onClick = onFamilyHidden),
                 )
             }
             item { SectionTitle(stringResource(R.string.section_computer)) }

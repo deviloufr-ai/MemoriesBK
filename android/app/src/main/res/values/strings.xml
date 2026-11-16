@@ -394,6 +394,21 @@
         <item quantity="many">%d éléments masqués</item>
         <item quantity="other">%d éléments masqués</item>
     </plurals>
+    <string name="family_hidden_photos">Retirées de Famille</string>
+    <string name="family_hidden_subtitle">Photos que la famille ne voit plus dans l\'onglet Famille</string>
+    <string name="family_unhide_count">Remettre dans Famille (%1$d)</string>
+    <string name="family_hidden_empty">Aucune photo retirée de Famille</string>
+    <string name="family_hidden_empty_text">Dans l\'onglet Famille, sélectionnez des photos puis « Retirer de Famille » : elles disparaissent de l\'onglet pour tout le monde, même si elles y sont arrivées par une personne ou un animal partagé. Rien n\'est supprimé.</string>
+    <plurals name="items_removed_family">
+        <item quantity="one">%d élément retiré de Famille</item>
+        <item quantity="many">%d éléments retirés de Famille</item>
+        <item quantity="other">%d éléments retirés de Famille</item>
+    </plurals>
+    <plurals name="items_back_in_family">
+        <item quantity="one">%d élément de nouveau dans Famille</item>
+        <item quantity="many">%d éléments de nouveau dans Famille</item>
+        <item quantity="other">%d éléments de nouveau dans Famille</item>
+    </plurals>
     <plurals name="items_unhidden">
         <item quantity="one">%d élément de nouveau visible</item>
         <item quantity="many">%d éléments de nouveau visibles</item>
