@@ -11,7 +11,8 @@
 #   ssh freebox@192.168.1.41 'docker rm -f photos-forward; echo freebox | sudo tee /srv/photos/ACTIVE; cd photos && docker compose up -d'
 set -e
 FB=freebox@192.168.1.41
-ME=192.168.1.58
+# Adresse par laquelle on joint la Freebox : l'Ethernet s'il est branché, sinon le Wi-Fi
+ME=$(ip -4 route get 192.168.1.41 | sed -n 's/.* src \([0-9.]*\).*/\1/p')
 LOCAL=/home/devil/photos
 SSH="ssh -o BatchMode=yes -o ConnectTimeout=10"
 DIRS="/srv/photos/postgres /srv/photos/thumbs /var/lib/docker/volumes/photos_redis/_data"
