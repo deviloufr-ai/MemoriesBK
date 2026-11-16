@@ -92,7 +92,7 @@ ORDER BY e.embedding <=> $2
 LIMIT 60;
 ```
 
-À fusionner (RRF) avec `search_tsv @@ websearch_to_tsquery('simple', q)` pour les correspondances exactes de texte OCR (« facture EDF », plaque, panneau).
+Complétée par `search_tsv @@ websearch_to_tsquery('simple', q)` : les médias dont la description ou le texte lu (VLM) contient les mots cherchés passent en tête (« facture EDF », plaque, panneau), CLIP complète la liste.
 
 ## 4. Lancer les workers
 
@@ -105,5 +105,12 @@ celery -A tasks worker -B -Q query,media,ml,vlm --pool threads -c 3
 La recherche ne charge pas CLIP dans l'API : elle envoie la requête au worker (tâche `embed_query`, file `query`)
 et attend le vecteur via le backend de résultats Redis.
 
-Sur une machine plus grosse, on peut séparer `-Q media` (prefork, -c 4), `-Q query,ml` et `-Q vlm -c 1`
-(la file vlm doit garder un consommateur unique).
+Sur le serveur 30 Go (`deploy/docker-compose.big.yml`, copié en `docker-compose.override.yml` par `deploy.sh`) :
+- `worker` (`-n main@photos -Q query,media -c 6`, + `ml` via `ml_gate`, `ML_WORKER=main@photos`) ;
+- `worker-vlm` (`-n vlm@photos -Q vlm -c 1`) : descriptions par Ollama et vidéos souvenirs, sans bloquer imports et recherche ;
+- `ollama` (qwen3-vl:4b-instruct, téléchargé tout seul à la 1re description). Mesuré sur 4 vCPU Xeon 2,1 GHz :
+  ~60 s par photo (≈ 37 s pour lire l'image en 1024 px, ≈ 24 s pour écrire la réponse). `OLLAMA_IMAGE_SIZE=768` : ~25 % plus rapide,
+  OCR moins fin. `sweep_vlm` complète la file jusqu'à `VLM_HOURLY_BUDGET` chaque heure.
+
+Bascule vers la Freebox : la file Redis part avec les données, mais chaque tâche `describe` porte le fournisseur qui l'a
+planifiée ; la Freebox (`VLM_PROVIDER` de `.env` : off ou gemini) ignore celles d'Ollama et rend le média au prochain sweep.

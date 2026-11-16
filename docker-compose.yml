@@ -91,12 +91,12 @@ services:
     memswap_limit: ${WORKER_MEMSWAP_LIMIT:-2300m}
 
   ollama:
-    image: ollama/ollama:0.5.7
-    profiles: ["ollama"]
+    image: ollama/ollama:0.40.10
+    profiles: ["ollama"]   # activé d'office sur le serveur 30 Go (deploy/docker-compose.big.yml)
     restart: unless-stopped
     volumes:
       - ollama:/root/.ollama
-    # Après le 1er démarrage : docker compose exec ollama ollama pull qwen2.5vl:7b
+    # Le modèle (OLLAMA_MODEL) est téléchargé tout seul à la 1re description (server/vlm.py)
 
   web:
     # PWA (SvelteKit) : étape suivante du projet, le dossier ./web n'existe pas encore

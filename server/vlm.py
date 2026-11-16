@@ -72,27 +72,58 @@ def _gemini(webp: bytes) -> VlmResult:
     return VlmResult.model_validate_json(resp.text) if resp.text else VlmResult(description="")
 
 
+OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://ollama:11434")
+OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen3-vl:4b-instruct")
+# Sur CPU, le temps de calcul suit le nombre de pixels : 1024 px garde l'OCR lisible pour ~4x moins qu'en 1440 px.
+OLLAMA_IMAGE_SIZE = int(os.environ.get("OLLAMA_IMAGE_SIZE", "1024"))
+OLLAMA_NUM_THREAD = int(os.environ.get("OLLAMA_NUM_THREAD", "0"))  # 0 = choix d'Ollama
+
+
+# Sur CPU, chaque token généré coûte ~0,15 s : sans plafond, qwen3-vl peut aligner 90 tags (1 min de plus).
+# Contrainte imposée par la grammaire JSON d'Ollama ; pas dans VlmResult, pour ne pas rejeter une réponse Gemini.
+_OLLAMA_SCHEMA = VlmResult.model_json_schema()
+_OLLAMA_SCHEMA["properties"]["tags"]["maxItems"] = 15
+
+
 def _ollama(image_path) -> VlmResult:
     import pyvips
 
-    jpeg = pyvips.Image.new_from_file(str(image_path)).jpegsave_buffer(Q=85)
+    img = pyvips.Image.thumbnail(str(image_path), OLLAMA_IMAGE_SIZE, size="down")
+    jpeg = img.jpegsave_buffer(Q=85)
+    # num_predict : garde-fou si le modèle boucle ; une réponse normale fait 100 à 250 tokens
+    options = {"temperature": 0.2, "num_predict": 1024}
+    if OLLAMA_NUM_THREAD:
+        options["num_thread"] = OLLAMA_NUM_THREAD
     try:
         r = httpx.post(
-            f"{os.environ.get('OLLAMA_URL', 'http://ollama:11434')}/api/generate",
+            f"{OLLAMA_URL}/api/generate",
             json={
-                "model": os.environ.get("OLLAMA_MODEL", "qwen2.5vl:7b"),
+                "model": OLLAMA_MODEL,
                 "prompt": PROMPT,
                 "images": [base64.b64encode(jpeg).decode()],
-                "format": VlmResult.model_json_schema(),
+                "format": _OLLAMA_SCHEMA,
                 "stream": False,
-                "options": {"temperature": 0.2},
+                "keep_alive": "30m",  # rechargement du modèle : ~10 s sur CPU, à chaque photo sinon
+                "options": options,
             },
-            timeout=300,
+            timeout=600,
         )
+        if r.status_code == 404 and "not found" in r.text:
+            _ollama_pull()
+            raise RetryableError(f"ollama: modèle {OLLAMA_MODEL} téléchargé, nouvel essai")
         r.raise_for_status()
     except httpx.HTTPError as e:  # service local : toute erreur HTTP/réseau est transitoire
         raise RetryableError(f"ollama: {e}") from e
-    return VlmResult.model_validate_json(r.json()["response"])
+    try:
+        return VlmResult.model_validate_json(r.json()["response"])
+    except ValueError as e:  # JSON tronqué par num_predict : rare, un nouvel essai suffit en général
+        raise RetryableError(f"ollama: réponse invalide: {e}") from e
+
+
+def _ollama_pull():
+    """1er lancement : télécharge le modèle (quelques Go) au lieu d'exiger un `ollama pull` à la main."""
+    httpx.post(f"{OLLAMA_URL}/api/pull", json={"model": OLLAMA_MODEL, "stream": False},
+               timeout=3600).raise_for_status()
 
 
 def gemini_enabled() -> bool:

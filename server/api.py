@@ -451,7 +451,14 @@ def search_semantic(fam: Fam, q: str = Query(min_length=2, max_length=200),
             f"WHERE {ready(fam)} AND e.model = %(model)s "
             "ORDER BY e.embedding <=> %(v)s LIMIT %(limit)s",
             {"v": vec, "fam": fam, "model": CLIP_MODEL_ID, "limit": limit}).fetchall()
-    return {"items": rows}
+        # Mots présents dans la description ou le texte lu sur la photo (VLM) : en tête, CLIP complète
+        words = c.execute(
+            f"SELECT {MEDIA_COLS}, 1.0 AS score FROM media m "
+            f"WHERE {ready(fam)} AND m.search_tsv @@ websearch_to_tsquery('simple', %(q)s) "
+            "ORDER BY ts_rank(m.search_tsv, websearch_to_tsquery('simple', %(q)s)) DESC, m.taken_at DESC "
+            "LIMIT %(limit)s", {"q": q, "fam": fam, "limit": limit // 2}).fetchall()
+    seen = {r["id"] for r in words}
+    return {"items": (words + [r for r in rows if r["id"] not in seen])[:limit]}
 
 
 class Ids(BaseModel):

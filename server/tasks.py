@@ -32,7 +32,8 @@ DSN = os.environ.get("DATABASE_URL", "postgresql://photos:photos@postgres/photos
 THUMB_SIZES = {"sm": 320, "md": 1440}
 FACE_MAX_DIST = float(os.environ.get("FACE_MAX_DIST", "0.6"))  # distance cosinus ; 0.6 ≈ similarité 0.4
 VLM_HOURLY_BUDGET = int(os.environ.get("VLM_HOURLY_BUDGET", "20"))  # ≈ quota quotidien gratuit / 24
-VLM_RATE_LIMIT = os.environ.get("VLM_RATE_LIMIT", "8/m")  # sous le RPM gratuit, marge pour les retries
+# Gemini : sous le RPM gratuit, marge pour les retries. Ollama : vide = pas de limite (le CPU borne déjà le débit).
+VLM_RATE_LIMIT = os.environ.get("VLM_RATE_LIMIT", "8/m") or None
 
 REDIS_URL = os.environ.get("REDIS_URL", "redis://redis:6379/0")
 app = Celery("photos", broker=REDIS_URL, backend=REDIS_URL)
@@ -327,8 +328,14 @@ def detect_faces(media_id: str):
 
 @app.task(autoretry_for=(vlm.RetryableError,), retry_backoff=60, retry_backoff_max=3600,
           retry_jitter=True, max_retries=6, rate_limit=VLM_RATE_LIMIT)
-def describe(media_id: str):
+def describe(media_id: str, provider: str | None = None):
     # Après max_retries (quota du jour épuisé), vlm_done_at reste NULL : sweep_vlm reprendra le média demain.
+    if provider is not None and provider != vlm.PROVIDER:
+        # Tâche planifiée par le serveur (Ollama) puis rendue à la Freebox avec la file Redis : on ne l'envoie
+        # ni à Gemini ni nulle part ; le média redevient candidat pour le prochain sweep du bon serveur.
+        with db() as conn:
+            conn.execute("UPDATE media SET vlm_attempted_at = NULL WHERE id = %s AND vlm_done_at IS NULL", (media_id,))
+        return
     r = vlm.describe(thumb_path(media_id, "md"))
     tags = {t.strip().lower()[:64] for t in r.tags if t.strip()}
     with db() as conn, conn.transaction():
@@ -344,8 +351,13 @@ def describe(media_id: str):
 
 @app.task
 def sweep_vlm():
-    """Seul point d'entrée de la queue vlm : un budget horaire borne la consommation du quota gratuit."""
+    """Seul point d'entrée de la queue vlm. VLM_HOURLY_BUDGET borne la file : quota gratuit pour Gemini,
+    environ une heure de calcul pour Ollama. On complète la file au lieu d'ajouter, pour qu'un modèle plus
+    lent que prévu n'accumule pas de retard (les médias en attente seraient re-sélectionnés au bout d'un jour)."""
     if not vlm.ENABLED:
+        return
+    room = VLM_HOURLY_BUDGET - _redis.llen("vlm")
+    if room <= 0:
         return
     with db() as conn:
         rows = conn.execute(
@@ -353,10 +365,10 @@ def sweep_vlm():
             " SELECT id FROM media WHERE status = 'ready' AND deleted_at IS NULL AND vlm_done_at IS NULL"
             " AND (vlm_attempted_at IS NULL OR vlm_attempted_at < now() - interval '1 day')"
             " ORDER BY taken_at DESC LIMIT %s) RETURNING id",
-            (VLM_HOURLY_BUDGET,),
+            (room,),
         ).fetchall()
     for row in rows:
-        describe.delay(str(row["id"]))
+        describe.delay(str(row["id"]), vlm.PROVIDER)
 
 
 def iter_media(root: Path):
@@ -516,6 +528,8 @@ def enhance(media_id: str, user_id: str, mode: str = "auto"):
 
 
 IMPORT_BACKLOG_PAUSE = int(os.environ.get("IMPORT_BACKLOG_PAUSE", "50"))
+# Plusieurs workers (serveur 30 Go : un worker dédié à la file vlm) : seul celui-ci doit écouter `ml`.
+ML_WORKER = os.environ.get("ML_WORKER")
 
 
 def ml_gate() -> bool:
@@ -527,10 +541,11 @@ def ml_gate() -> bool:
             # file d'attente seulement : un import tué (OOM) resterait « running » et bloquerait l'IA pour toujours
             "SELECT (SELECT count(*) FROM media WHERE status = 'quarantined') > %s AS busy",
             (IMPORT_BACKLOG_PAUSE,)).fetchone()["busy"]
+    dest = [ML_WORKER] if ML_WORKER else None
     if busy:
-        app.control.cancel_consumer("ml")
+        app.control.cancel_consumer("ml", destination=dest)
     else:
-        app.control.add_consumer("ml")
+        app.control.add_consumer("ml", destination=dest)
     return busy
 
 

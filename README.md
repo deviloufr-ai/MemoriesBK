@@ -16,6 +16,7 @@ MemoriesBK sauvegarde automatiquement les photos et vidéos des téléphones de 
 
 ### Intelligence artificielle locale
 - **Recherche en langage naturel** (« coucher de soleil à la plage »), avec le modèle multilingue CLIP.
+- **Descriptions et texte des photos** (panneaux, factures, documents) par un modèle de vision local (Ollama, qwen3-vl) sur le serveur 30 Go : la recherche trouve aussi les mots écrits sur les photos.
 - **Reconnaissance des visages** (InsightFace) : regroupement par personne et correction manuelle d'un visage mal attribué.
 - **Catégories automatiques** : plage, nourriture, animaux, documents…
 - **Nettoyage assisté** : photos floues, trop sombres, rafales en double, captures d'écran, ou suppression par description.
@@ -49,7 +50,7 @@ MemoriesBK sauvegarde automatiquement les photos et vidéos des téléphones de 
 | API | Python, FastAPI, JWT |
 | Traitements | Celery (files `media`, `ml`, `vlm`), Redis |
 | Données | PostgreSQL 16 + pgvector (recherche vectorielle), NAS pour les originaux, SSD pour les miniatures |
-| IA | open_clip (XLM-RoBERTa ViT-B/32), InsightFace, libvips, ffmpeg, Gemini (optionnel) |
+| IA | open_clip (XLM-RoBERTa ViT-B/32), InsightFace, Ollama (qwen3-vl, serveur 30 Go), libvips, ffmpeg, Gemini (optionnel) |
 | Hébergement | Docker Compose sur une VM Freebox (2 Go de RAM), Tailscale Funnel pour l'accès HTTPS |
 
 Quelques choix d'ingénierie :
