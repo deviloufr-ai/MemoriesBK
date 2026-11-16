@@ -13,17 +13,28 @@ CLIP_ARCH = os.environ.get("CLIP_ARCH", "xlm-roberta-base-ViT-B-32")
 CLIP_PRETRAINED = os.environ.get("CLIP_PRETRAINED", "laion5b_s13b_b90k")
 CLIP_MODEL_ID = f"{CLIP_ARCH}/{CLIP_PRETRAINED}"
 
+# Modèle de recherche plus gros, en plus du précédent (serveur 30 Go seulement) : sert uniquement à la recherche
+# par texte. Catégories, doublons, animaux, nettoyage restent sur CLIP_MODEL_ID (seuils calibrés dessus), que la
+# Freebox sait aussi calculer. Vide = désactivé. Table search_embeddings : vector(1024).
+SEARCH_CLIP_ARCH = os.environ.get("SEARCH_CLIP_ARCH", "")
+SEARCH_CLIP_PRETRAINED = os.environ.get("SEARCH_CLIP_PRETRAINED", "")
+SEARCH_MODEL_ID = f"{SEARCH_CLIP_ARCH}/{SEARCH_CLIP_PRETRAINED}" if SEARCH_CLIP_ARCH else None
+SEARCH_DIMS = 1024
+
 MIN_DET_SCORE = 0.6
 MIN_FACE_PX = 40  # sur la miniature md (1440 px) : en dessous, l'embedding est peu fiable
 
 
-def _clip():
+def _clip(search: bool = False):
     with _load_lock:
-        return _load_clip()
+        if search:
+            assert SEARCH_MODEL_ID, "SEARCH_CLIP_ARCH non défini"
+            return _load_clip(SEARCH_CLIP_ARCH, SEARCH_CLIP_PRETRAINED)
+        return _load_clip(CLIP_ARCH, CLIP_PRETRAINED)
 
 
 @cache
-def _load_clip():
+def _load_clip(arch: str, pretrained: str):
     import open_clip
     import torch
 
@@ -31,9 +42,9 @@ def _load_clip():
 
     # VM 2 Go : un chargement classique copie 1,5 Go de poids en RAM anonyme (OOM en boucle le 10/11).
     # Modèle construit sur `meta` puis poids pris en mmap : pages adossées au fichier, que le noyau peut libérer.
-    cfg = get_pretrained_cfg(CLIP_ARCH, CLIP_PRETRAINED)
+    cfg = get_pretrained_cfg(arch, pretrained)
     with torch.device("meta"):
-        model = open_clip.create_model(CLIP_ARCH, pretrained_hf=False, device="meta")
+        model = open_clip.create_model(arch, pretrained_hf=False, device="meta")
     sd = torch.load(download_pretrained(cfg), map_location="cpu", mmap=True, weights_only=True)
     sd = {k.removeprefix("module."): v for k, v in sd.get("state_dict", sd).items()}
     model.load_state_dict(sd, assign=True, strict=False)
@@ -47,20 +58,20 @@ def _load_clip():
     model.eval()
     preprocess = open_clip.image_transform(model.visual.image_size, is_train=False,
                                            mean=cfg.get("mean"), std=cfg.get("std"))
-    return model, preprocess, open_clip.get_tokenizer(CLIP_ARCH), torch
+    return model, preprocess, open_clip.get_tokenizer(arch), torch
 
 
-def embed_image(path) -> np.ndarray:
+def embed_image(path, search: bool = False) -> np.ndarray:
     from PIL import Image
 
-    model, preprocess, _, torch = _clip()
+    model, preprocess, _, torch = _clip(search)
     with torch.no_grad(), Image.open(path) as img:
         v = model.encode_image(preprocess(img.convert("RGB")).unsqueeze(0))[0]
     return (v / v.norm()).numpy()
 
 
-def embed_text(query: str) -> np.ndarray:
-    model, _, tokenizer, torch = _clip()
+def embed_text(query: str, search: bool = False) -> np.ndarray:
+    model, _, tokenizer, torch = _clip(search)
     with torch.no_grad():
         v = model.encode_text(tokenizer([query]))[0]
     return (v / v.norm()).numpy()

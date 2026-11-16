@@ -29,9 +29,9 @@ from pydantic import BaseModel, Field
 
 import migrate
 from metadata import media_mime, safe_join, visible_dir
-from ml import CLIP_MODEL_ID  # constante seulement : importer ml ne charge aucun modèle
+from ml import CLIP_MODEL_ID, SEARCH_MODEL_ID  # constantes seulement : importer ml ne charge aucun modèle
 from tasks import (DSN, REDIS_URL, IMPORT_EXCLUDE, IMPORT_ROOT, PHOTOS_DIR, QUARANTINE_DIR, embed_query, import_folder, ingest,
-                   part_path, thumb_path, MEMORY_VIDEO_DIR, THUMBS_DIR, queue_memory_video)
+                   part_path, thumb_path, MEMORY_VIDEO_DIR, SEARCH_READY_KEY, THUMBS_DIR, queue_memory_video)
 from tasks import enhance as enhance_task, refresh_pet_media
 from util import decode_cursor, encode_cursor, hash_password, parse_content_range, verify_password
 
@@ -439,18 +439,36 @@ def timeline(fam: Fam, cursor: str | None = None, limit: int = Query(200, ge=1, 
 @app.get("/api/v1/search/semantic")
 def search_semantic(fam: Fam, q: str = Query(min_length=2, max_length=200),
                     limit: int = Query(60, ge=1, le=200)):
+    # Modèle de recherche plus gros (serveur 30 Go) une fois qu'il couvre la bibliothèque (tasks._search_backfill)
+    big = SEARCH_MODEL_ID if SEARCH_MODEL_ID and _redis.get(SEARCH_READY_KEY) == SEARCH_MODEL_ID.encode() else None
     try:  # CLIP ne vit que dans le worker (RAM) ; le 1er appel attend le chargement du modèle
-        vec = np.array(embed_query.apply_async(args=[q]).get(timeout=120), dtype=np.float32)
+        jobs = [embed_query.apply_async(args=[q]), *([embed_query.apply_async(args=[q, True])] if big else [])]
+        vec, *vec_big = [np.array(j.get(timeout=120), dtype=np.float32) for j in jobs]
     except celery.exceptions.TimeoutError:
         raise HTTPException(503, "moteur de recherche indisponible, réessayer")
+    p = {"v": vec, "fam": fam, "model": CLIP_MODEL_ID, "limit": limit}
     with pool.connection() as c, c.transaction():
         c.execute("SET LOCAL hnsw.iterative_scan = strict_order")  # le filtre owner ne vide pas le top-k
-        rows = c.execute(
-            f"SELECT {MEDIA_COLS}, 1 - (e.embedding <=> %(v)s) AS score "
-            "FROM embeddings e JOIN media m ON m.id = e.media_id "
-            f"WHERE {ready(fam)} AND e.model = %(model)s "
-            "ORDER BY e.embedding <=> %(v)s LIMIT %(limit)s",
-            {"v": vec, "fam": fam, "model": CLIP_MODEL_ID, "limit": limit}).fetchall()
+        if big:
+            rows = c.execute(
+                f"SELECT {MEDIA_COLS}, 1 - (e.embedding <=> %(vb)s) AS score "
+                "FROM search_embeddings e JOIN media m ON m.id = e.media_id "
+                f"WHERE {ready(fam)} AND e.model = %(big)s "
+                "ORDER BY e.embedding <=> %(vb)s LIMIT %(limit)s", p | {"vb": vec_big[0], "big": big}).fetchall()
+            # Photos arrivées depuis (quelques minutes de retard, ou ajoutées pendant que la Freebox servait) :
+            # modèle de base, en fin de liste. Distances exactes sur ce petit ensemble (OFFSET 0 : pas de HNSW).
+            rows += c.execute(
+                f"SELECT {MEDIA_COLS}, 1 - (e.embedding <=> %(v)s) AS score "
+                "FROM (SELECT e.* FROM embeddings e WHERE e.model = %(model)s AND NOT EXISTS (SELECT 1 FROM "
+                "search_embeddings s WHERE s.media_id = e.media_id AND s.model = %(big)s) OFFSET 0) e "
+                f"JOIN media m ON m.id = e.media_id WHERE {ready(fam)} "
+                "ORDER BY e.embedding <=> %(v)s LIMIT %(few)s", p | {"big": big, "few": max(1, limit // 4)}).fetchall()
+        else:
+            rows = c.execute(
+                f"SELECT {MEDIA_COLS}, 1 - (e.embedding <=> %(v)s) AS score "
+                "FROM embeddings e JOIN media m ON m.id = e.media_id "
+                f"WHERE {ready(fam)} AND e.model = %(model)s "
+                "ORDER BY e.embedding <=> %(v)s LIMIT %(limit)s", p).fetchall()
         # Mots présents dans la description ou le texte lu sur la photo (VLM) : en tête, CLIP complète
         words = c.execute(
             f"SELECT {MEDIA_COLS}, 1.0 AS score FROM media m "

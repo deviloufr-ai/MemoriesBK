@@ -52,6 +52,7 @@ app.conf.update(
         "tasks.sweep_vlm": {"queue": "media"},
         "tasks.housekeeping": {"queue": "media"},
         "tasks.clip_embed": {"queue": "ml"},
+        "tasks.search_embed": {"queue": "ml"},
         "tasks.categorize_all": {"queue": "ml"},
         "tasks.quality_all": {"queue": "ml"},
         "tasks.category_stats": {"queue": "query"},
@@ -218,11 +219,12 @@ def ingest(self, media_id: str):
 
 
 @app.task(ignore_result=False)
-def embed_query(text: str) -> list[float]:
-    """Encodage CLIP d'une recherche : fait par le worker pour ne garder qu'une copie du modèle en RAM."""
+def embed_query(text: str, search: bool = False) -> list[float]:
+    """Encodage CLIP d'une recherche : fait par le worker pour ne garder qu'une copie du modèle en RAM.
+    search=True : modèle de recherche (SEARCH_CLIP_ARCH) au lieu du modèle de base."""
     import ml
 
-    return ml.embed_text(text).tolist()
+    return ml.embed_text(text, search).tolist()
 
 
 @app.task(autoretry_for=(OSError,), retry_backoff=True, max_retries=3)
@@ -236,6 +238,23 @@ def clip_embed(media_id: str):
                      (media_id, ml.CLIP_MODEL_ID, vec))
         store_categories(conn, media_id, ml.categorize_many(vec[None, :])[0])
     _store_quality(media_id)
+    if ml.SEARCH_MODEL_ID:
+        search_embed.delay(media_id)
+
+
+@app.task(autoretry_for=(OSError,), retry_backoff=True, max_retries=3)
+def search_embed(media_id: str):
+    """Vecteur du modèle de recherche (~1 s par photo sur CPU pour ViT-H-14), en plus de celui de clip_embed."""
+    import ml
+
+    if not ml.SEARCH_MODEL_ID:  # tâche rendue à la Freebox avec la file Redis : elle n'a pas ce modèle
+        return
+    vec = ml.embed_image(thumb_path(media_id, "md"), search=True)
+    assert vec.shape == (ml.SEARCH_DIMS,), f"{ml.SEARCH_MODEL_ID} : {vec.shape[0]} dimensions, table en {ml.SEARCH_DIMS}"
+    with db() as conn:
+        conn.execute("INSERT INTO search_embeddings (media_id, model, embedding) VALUES (%s, %s, %s) "
+                     "ON CONFLICT (media_id, model) DO UPDATE SET embedding = EXCLUDED.embedding",
+                     (media_id, ml.SEARCH_MODEL_ID, vec))
 
 
 def _store_quality(media_id: str) -> None:
@@ -586,7 +605,7 @@ def refresh_pet_media(conn, pet_id=None) -> None:
 @app.task
 def housekeeping():
     """Purge les uploads abandonnés ; relance les ingests et les analyses jamais abouties (crash, Redis down)."""
-    from ml import CLIP_MODEL_ID
+    from ml import CLIP_MODEL_ID, SEARCH_MODEL_ID
 
     with db() as conn:
         # Sans vecteur CLIP (du modèle courant), un média est invisible à la recherche : on relance son analyse
@@ -600,6 +619,8 @@ def housekeeping():
         stuck = conn.execute("SELECT id FROM media WHERE status = 'quarantined' "
                              "AND created_at < now() - interval '1 hour'").fetchall()
         refresh_pet_media(conn)  # nouvelles photos de chaque animal nommé
+        if SEARCH_MODEL_ID:
+            search_todo = _search_backfill(conn, CLIP_MODEL_ID, SEARCH_MODEL_ID)
     for row in expired:
         part_path(row["id"]).unlink(missing_ok=True)
     # Une seule relance toutes les 6 h par média : sinon, file engorgée, chaque passage (15 min) ajoutait des doublons
@@ -613,6 +634,40 @@ def housekeeping():
             clip_embed.delay(str(row["id"]))
             if row["kind"] == "image":
                 detect_faces.delay(str(row["id"]))
+    if SEARCH_MODEL_ID:
+        for row in search_todo:
+            if once_per(f"requeue:search:{row['id']}", 6 * 3600):
+                search_embed.delay(str(row["id"]))
+
+
+# Rattrapage du modèle de recherche : la file ml est complétée jusqu'à ce seuil à chaque passage (15 min),
+# pour ne pas y empiler toute la bibliothèque d'un coup (les nouvelles photos passeraient derrière).
+SEARCH_BACKFILL_QUEUE = int(os.environ.get("SEARCH_BACKFILL_QUEUE", "500"))
+SEARCH_READY_KEY = "search:ready"  # lu par l'API : modèle de recherche dont la couverture est complète
+SEARCH_READY_MAX_MISSING = 0.01
+
+
+def _search_backfill(conn, base: str, model: str) -> list:
+    """Publie dans Redis si le modèle de recherche couvre la bibliothèque (l'API ne bascule qu'alors) ;
+    renvoie les médias à (re)calculer, dans la limite de la place dans la file ml."""
+    # Même ensemble que la recherche : médias prêts qui ont un vecteur de base (donc une miniature analysable)
+    n = conn.execute(
+        "SELECT count(*) AS total, count(*) FILTER (WHERE s.media_id IS NULL) AS missing "
+        "FROM media m JOIN embeddings e ON e.media_id = m.id AND e.model = %s "
+        "LEFT JOIN search_embeddings s ON s.media_id = m.id AND s.model = %s "
+        "WHERE m.status = 'ready' AND m.deleted_at IS NULL", (base, model)).fetchone()
+    if n["missing"] <= n["total"] * SEARCH_READY_MAX_MISSING:
+        _redis.set(SEARCH_READY_KEY, model, ex=3600)
+    else:
+        _redis.delete(SEARCH_READY_KEY)
+    room = SEARCH_BACKFILL_QUEUE - _redis.llen("ml")
+    if room <= 0 or not n["missing"]:
+        return []
+    return conn.execute(
+        "SELECT m.id FROM media m JOIN embeddings e ON e.media_id = m.id AND e.model = %s "
+        "WHERE m.status = 'ready' AND m.deleted_at IS NULL AND NOT EXISTS "
+        "(SELECT 1 FROM search_embeddings s WHERE s.media_id = m.id AND s.model = %s) "
+        "ORDER BY m.taken_at DESC LIMIT %s", (base, model, room)).fetchall()
 
 
 # ---------- Vidéo souvenir du mois ----------

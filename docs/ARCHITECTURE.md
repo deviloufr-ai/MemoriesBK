@@ -107,6 +107,11 @@ et attend le vecteur via le backend de résultats Redis.
 
 Sur le serveur 30 Go (`deploy/docker-compose.big.yml`, copié en `docker-compose.override.yml` par `deploy.sh`) :
 - `worker` (`-n main@photos -Q query,media -c 6`, + `ml` via `ml_gate`, `ML_WORKER=main@photos`) ;
+- recherche par texte avec `xlm-roberta-large-ViT-H-14` (`SEARCH_CLIP_ARCH`, table `search_embeddings` en 1024 dims),
+  en plus du ViT-B/32 qui reste la référence (catégories, doublons, animaux, nettoyage, Freebox). Crossmodal-3600,
+  rappel@1 image : fr 0,606 → 0,685, ja 0,638 → 0,726. ~1 s par photo sur 4 threads. `housekeeping` rattrape la
+  bibliothèque (file `ml` complétée jusqu'à `SEARCH_BACKFILL_QUEUE`) et publie `search:ready` dans Redis quand
+  99 % des médias ont leur vecteur : l'API bascule alors ; les photos encore sans vecteur passent par le modèle de base ;
 - `worker-vlm` (`-n vlm@photos -Q vlm -c 1`) : descriptions par Ollama et vidéos souvenirs, sans bloquer imports et recherche ;
 - `ollama` (qwen3-vl:4b-instruct, téléchargé tout seul à la 1re description). Mesuré sur 4 vCPU Xeon 2,1 GHz :
   ~60 s par photo (≈ 37 s pour lire l'image en 1024 px, ≈ 24 s pour écrire la réponse). `OLLAMA_IMAGE_SIZE=768` : ~25 % plus rapide,

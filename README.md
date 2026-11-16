@@ -15,7 +15,7 @@ MemoriesBK sauvegarde automatiquement les photos et vidéos des téléphones de 
 - **Libérer de l'espace** : supprime du téléphone les photos déjà sauvegardées.
 
 ### Intelligence artificielle locale
-- **Recherche en langage naturel** (« coucher de soleil à la plage »), avec le modèle multilingue CLIP.
+- **Recherche en langage naturel** (« coucher de soleil à la plage »), avec le modèle multilingue CLIP (un modèle plus gros et plus précis, ViT-H-14, sur le serveur 30 Go).
 - **Descriptions et texte des photos** (panneaux, factures, documents) par un modèle de vision local (Ollama, qwen3-vl) sur le serveur 30 Go : la recherche trouve aussi les mots écrits sur les photos.
 - **Reconnaissance des visages** (InsightFace) : regroupement par personne et correction manuelle d'un visage mal attribué.
 - **Catégories automatiques** : plage, nourriture, animaux, documents…

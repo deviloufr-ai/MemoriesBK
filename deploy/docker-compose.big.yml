@@ -13,6 +13,11 @@ services:
       MKL_NUM_THREADS: "4"
       IMPORT_BACKLOG_PAUSE: "1000000"   # assez de RAM pour import NAS + IA en même temps : ml_gate ne met plus l'IA en pause
       ML_WORKER: main@photos            # ml_gate n'ajoute la file `ml` qu'au worker principal, pas à worker-vlm
+      # Recherche par texte avec un CLIP plus gros (multilingue, 1024 dims, ~1 s par photo, ~5 Go de RAM), EN PLUS
+      # de xlm-roberta-base-ViT-B-32 que la Freebox continue d'utiliser. L'API ne s'en sert qu'une fois toute la
+      # bibliothèque rattrapée (housekeeping, 15 min) ; avant, et sur la Freebox, recherche avec le modèle de base.
+      SEARCH_CLIP_ARCH: xlm-roberta-large-ViT-H-14
+      SEARCH_CLIP_PRETRAINED: frozen_laion5b_s13b_b90k
       # Descriptions + texte des photos par Ollama, en local, sur toute la bibliothèque. Sur la Freebox, .env reste
       # maître (off ou gemini) : les tâches Ollama rendues avec la file Redis y sont ignorées (tasks.describe).
       VLM_PROVIDER: ollama

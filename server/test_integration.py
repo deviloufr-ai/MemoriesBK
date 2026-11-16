@@ -190,3 +190,91 @@ def test_publish_apk(monkeypatch, tmp_path):
     assert client.get("/MemoriesBK.apk").content == apk
     assert not list(tmp_path.glob(".upload-*"))
     api._redis.delete("apk-publish")
+
+
+def _unit(n, seed):
+    v = np.random.default_rng(seed).standard_normal(n).astype(np.float32)
+    return v / np.linalg.norm(v)
+
+
+@pytest.fixture
+def search_media(fam):
+    """3 photos : 0 a une description, 0 et 1 ont un vecteur du gros modèle, 2 seulement celui de base (arrivée récente)."""
+    a = fam["u"]["a"]
+    with api.pool.connection() as c:
+        ids = [c.execute("INSERT INTO media (owner_id, sha256, kind, mime_type, original_name, size_bytes, status, "
+                         "taken_at) VALUES (%s, %s, 'image', 'image/jpeg', 'x.jpg', 1, 'ready', %s) RETURNING id",
+                         (a, os.urandom(32), _dt(2023))).fetchone()["id"] for _ in range(3)]
+        c.execute("UPDATE media SET description = 'panneau de la boulangerie Martin', ocr_text = 'Fermé le lundi' "
+                  "WHERE id = %s", (ids[0],))
+        for i, mid in enumerate(ids):
+            c.execute("INSERT INTO embeddings (media_id, model, embedding) VALUES (%s, %s, %s)",
+                      (mid, api.CLIP_MODEL_ID, _unit(512, i)))
+            if i < 2:
+                c.execute("INSERT INTO search_embeddings (media_id, model, embedding) VALUES (%s, 'test/big', %s)",
+                          (mid, _unit(1024, 10 + i)))
+    yield ids
+    with api.pool.connection() as c:
+        c.execute("DELETE FROM media WHERE id = ANY(%s)", (ids,))
+    api._redis.delete(api.SEARCH_READY_KEY)
+
+
+def _fake_queries(monkeypatch, base, big):
+    class Job:
+        def __init__(self, v):
+            self.v = v
+
+        def get(self, timeout):
+            return self.v.tolist()
+
+    calls = []
+
+    def apply_async(args):
+        calls.append(len(args) > 1 and args[1])
+        return Job(big if len(args) > 1 and args[1] else base)
+
+    monkeypatch.setattr(api.embed_query, "apply_async", apply_async)
+    return calls
+
+
+def test_search_words_first_then_base_model(fam, search_media, monkeypatch):
+    ids = search_media
+    calls = _fake_queries(monkeypatch, _unit(512, 1), _unit(1024, 11))
+    monkeypatch.setattr(api, "SEARCH_MODEL_ID", None)
+    items = [i["id"] for i in api.search_semantic(fam["f"]["a"], "boulangerie lundi", 60)["items"]]
+    assert items[0] == ids[0]          # mots de la description + du texte lu
+    assert items[1] == ids[1]          # puis CLIP : vecteur identique à la requête
+    assert set(ids) <= set(items) and len(items) == len(set(items))
+    assert calls == [False]
+    # Famille restreinte sans règle : ne voit pas ces photos, même par les mots
+    assert not set(ids) & {i["id"] for i in api.search_semantic(fam["f"]["r"], "boulangerie", 60)["items"]}
+
+
+def test_search_big_model_only_when_ready(fam, search_media, monkeypatch):
+    ids = search_media
+    calls = _fake_queries(monkeypatch, _unit(512, 2), _unit(1024, 11))
+    monkeypatch.setattr(api, "SEARCH_MODEL_ID", "test/big")
+    api._redis.delete(api.SEARCH_READY_KEY)
+    items = [i["id"] for i in api.search_semantic(fam["f"]["a"], "photo", 60)["items"]]
+    assert calls == [False] and items[0] == ids[2]   # pas encore prêt : modèle de base (requête = vecteur de 2)
+    api._redis.set(api.SEARCH_READY_KEY, "test/big")
+    calls.clear()
+    items = [i["id"] for i in api.search_semantic(fam["f"]["a"], "photo", 60)["items"]]
+    assert calls == [False, True]
+    assert items[0] == ids[1]          # gros modèle : vecteur identique à la requête
+    assert items[-1] == ids[2]         # sans vecteur du gros modèle : modèle de base, en fin de liste
+    assert len(items) == 3
+
+
+def test_search_backfill_marks_ready(fam, search_media):
+    import tasks
+
+    ids = search_media
+    with api.pool.connection() as c:
+        todo = tasks._search_backfill(c, api.CLIP_MODEL_ID, "test/big")
+        assert [r["id"] for r in todo] == [ids[2]]
+        assert api._redis.get(tasks.SEARCH_READY_KEY) is None   # 1 sur 3 manquant : pas prêt
+        c.execute("INSERT INTO search_embeddings (media_id, model, embedding) VALUES (%s, 'test/big', %s)",
+                  (ids[2], _unit(1024, 12)))
+        assert tasks._search_backfill(c, api.CLIP_MODEL_ID, "test/big") == []
+        assert api._redis.get(tasks.SEARCH_READY_KEY) == b"test/big"
