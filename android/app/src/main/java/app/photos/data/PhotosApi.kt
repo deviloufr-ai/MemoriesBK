@@ -98,7 +98,7 @@ interface PhotosApi {
     suspend fun people(): PeopleRes
 
     @GET("api/v1/health")
-    suspend fun health(): Response<Unit>
+    suspend fun health(): Response<Health>
 
     @POST("api/v1/people/{id}/merge")
     suspend fun mergePerson(@Path("id") personId: String, @Body body: MergeReq): PersonPatchRes
@@ -207,6 +207,9 @@ data class Comment(val id: String, val body: String, val author: String, val min
 data class Category(val name: String, @SerialName("media_count") val mediaCount: Int, @SerialName("cover_id") val coverId: String)
 @Serializable data class CategoriesRes(val categories: List<Category>)
 @Serializable data class EnhanceReq(val mode: String)
+/** /health : 200 => ce corps ; 503 => {"detail": <même corps>} (base ou Redis en panne). */
+@Serializable data class Health(val revision: String = "", val db: Boolean = false, val redis: Boolean = false)
+@Serializable data class HealthError(val detail: Health)
 
 @Serializable
 data class Member(

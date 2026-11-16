@@ -288,6 +288,19 @@
 
     <!-- Gérer -->
     <string name="section_account">Compte</string>
+    <string name="server_checking">Vérification du serveur…</string>
+    <string name="server_online">Serveur en ligne</string>
+    <string name="server_degraded">Serveur en difficulté</string>
+    <string name="server_unreachable">Serveur injoignable</string>
+    <string name="server_unreachable_text">Vérifie ta connexion ou que le serveur est allumé</string>
+    <string name="server_via_local">Réseau local</string>
+    <string name="server_via_internet">Internet</string>
+    <string name="server_latency">%1$d ms</string>
+    <string name="server_revision">version %1$s</string>
+    <string name="server_components">Base de données : %1$s • Redis : %2$s</string>
+    <string name="server_ok">OK</string>
+    <string name="server_ko">en panne</string>
+    <string name="server_refresh">Revérifier</string>
     <string name="account_connected">Compte connecté</string>
     <string name="section_backup">Sauvegarde</string>
     <string name="backup_now">Sauvegarder maintenant</string>

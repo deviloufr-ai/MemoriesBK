@@ -126,6 +126,36 @@ class GalleryViewModel @Inject constructor(
         null
     }
 
+    /** État du serveur affiché dans Gérer ; null = pas encore vérifié. */
+    data class ServerStatus(
+        val state: State, val latencyMs: Long? = null, val revision: String? = null,
+        val db: Boolean = false, val redis: Boolean = false, val viaLocal: Boolean = false,
+    ) { enum class State { CHECKING, ONLINE, DEGRADED, UNREACHABLE } }
+    val serverStatus = MutableStateFlow<ServerStatus?>(null)
+
+    /** Interroge /health sans afficher d'erreur : le résultat ne sert qu'à l'écran d'état. */
+    fun checkServer() = viewModelScope.launch {
+        serverStatus.update { (it ?: ServerStatus(ServerStatus.State.CHECKING)).copy(state = ServerStatus.State.CHECKING) }
+        val start = System.nanoTime()
+        serverStatus.value = try {
+            val res = api.health()
+            val ms = (System.nanoTime() - start) / 1_000_000
+            val localHost = settings.current().localUrl?.toHttpUrlOrNull()?.host
+            val viaLocal = localHost != null && res.raw().request.url.host == localHost
+            val h = res.body() ?: res.errorBody()?.string()?.let {
+                runCatching { healthJson.decodeFromString(app.photos.data.HealthError.serializer(), it).detail }.getOrNull()
+            }
+            offline.value = false
+            ServerStatus(
+                if (res.isSuccessful) ServerStatus.State.ONLINE else ServerStatus.State.DEGRADED,
+                ms, h?.revision, h?.db ?: false, h?.redis ?: false, viaLocal,
+            )
+        } catch (e: IOException) {
+            ServerStatus(ServerStatus.State.UNREACHABLE)
+        }
+    }
+    private val healthJson = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+
     /** Pendant le bandeau hors connexion : vérifie toutes les 10 s si le serveur répond de nouveau. */
     suspend fun pingServer() {
         if (call { api.health() } != null) refresh()

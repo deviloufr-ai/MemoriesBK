@@ -60,6 +60,9 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Wifi
+import androidx.compose.material.icons.outlined.Dns
+import app.photos.ui.GalleryViewModel.ServerStatus.State as ServerState
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -341,7 +344,7 @@ fun ManageTab(vm: GalleryViewModel, onCleanup: () -> Unit, onTrash: () -> Unit, 
     var sharing by remember { mutableStateOf<Member?>(null) }
     var confirmLogout by remember { mutableStateOf(false) }
     val context = LocalContext.current
-    LaunchedEffect(Unit) { vm.loadFamily() }
+    LaunchedEffect(Unit) { vm.loadFamily(); vm.checkServer() }
     Scaffold(contentWindowInsets = WindowInsets(0), topBar = { TopAppBar(title = { Text(stringResource(R.string.tab_manage)) }) }) { padding ->
         LazyColumn(Modifier.padding(padding)) {
             item { SectionTitle(stringResource(R.string.section_account)) }
@@ -352,6 +355,7 @@ fun ManageTab(vm: GalleryViewModel, onCleanup: () -> Unit, onTrash: () -> Unit, 
                     supportingContent = { Text(s?.serverUrl ?: "") },
                 )
             }
+            item { ServerStatusItem(vm) }
             familySection(family, onEdit = { editing = it }, onAdd = { adding = true }, onSharing = { sharing = it })
             item { SectionTitle(stringResource(R.string.section_backup)) }
             item {
@@ -500,3 +504,42 @@ fun EmptyState(modifier: Modifier, icon: ImageVector, title: String, text: Strin
     }
 }
 
+/** Serveur : en ligne / dégradé / injoignable, temps de réponse, adresse utilisée et version déployée. Toucher = revérifier. */
+@Composable
+private fun ServerStatusItem(vm: GalleryViewModel) {
+    val st by vm.serverStatus.collectAsState()
+    val state = st?.state ?: ServerState.CHECKING
+    val (label, color) = when (state) {
+        ServerState.CHECKING -> stringResource(R.string.server_checking) to MaterialTheme.colorScheme.outline
+        ServerState.ONLINE -> stringResource(R.string.server_online) to Color(0xFF2E7D32)
+        ServerState.DEGRADED -> stringResource(R.string.server_degraded) to Color(0xFFF9A825)
+        ServerState.UNREACHABLE -> stringResource(R.string.server_unreachable) to MaterialTheme.colorScheme.error
+    }
+    val details = st?.takeIf { it.state == ServerState.ONLINE || it.state == ServerState.DEGRADED }?.let { s ->
+        buildList {
+            add(stringResource(if (s.viaLocal) R.string.server_via_local else R.string.server_via_internet))
+            s.latencyMs?.let { add(stringResource(R.string.server_latency, it)) }
+            s.revision?.takeIf { it.isNotBlank() }?.let { add(stringResource(R.string.server_revision, it.take(7))) }
+        }.joinToString(" • ") + if (s.state == ServerState.DEGRADED) "\n" + stringResource(
+            R.string.server_components,
+            stringResource(if (s.db) R.string.server_ok else R.string.server_ko),
+            stringResource(if (s.redis) R.string.server_ok else R.string.server_ko),
+        ) else ""
+    } ?: if (state == ServerState.UNREACHABLE) stringResource(R.string.server_unreachable_text) else ""
+    ListItem(
+        leadingContent = { Icon(Icons.Outlined.Dns, null) },
+        headlineContent = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(10.dp).background(color, CircleShape))
+                Text(label, Modifier.padding(start = 8.dp))
+            }
+        },
+        supportingContent = { if (details.isNotEmpty()) Text(details) },
+        trailingContent = {
+            IconButton(onClick = { vm.checkServer() }, enabled = state != ServerState.CHECKING) {
+                Icon(Icons.Outlined.Refresh, stringResource(R.string.server_refresh))
+            }
+        },
+        modifier = Modifier.clickable(enabled = state != ServerState.CHECKING) { vm.checkServer() },
+    )
+}

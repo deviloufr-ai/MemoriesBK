@@ -271,6 +271,19 @@
 
     <!-- Gérer -->
     <string name="section_account">アカウント</string>
+    <string name="server_checking">サーバーを確認中…</string>
+    <string name="server_online">サーバー稼働中</string>
+    <string name="server_degraded">サーバーに問題があります</string>
+    <string name="server_unreachable">サーバーに接続できません</string>
+    <string name="server_unreachable_text">接続状況とサーバーの電源を確認してください</string>
+    <string name="server_via_local">ローカルネットワーク</string>
+    <string name="server_via_internet">インターネット</string>
+    <string name="server_latency">%1$d ms</string>
+    <string name="server_revision">バージョン %1$s</string>
+    <string name="server_components">データベース: %1$s • Redis: %2$s</string>
+    <string name="server_ok">OK</string>
+    <string name="server_ko">停止中</string>
+    <string name="server_refresh">再確認</string>
     <string name="account_connected">ログイン中のアカウント</string>
     <string name="section_backup">バックアップ</string>
     <string name="backup_now">今すぐバックアップ</string>
