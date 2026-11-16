@@ -31,6 +31,9 @@ DSN = os.environ.get("DATABASE_URL", "postgresql://photos:photos@postgres/photos
 
 THUMB_SIZES = {"sm": 320, "md": 1440}
 FACE_MAX_DIST = float(os.environ.get("FACE_MAX_DIST", "0.6"))  # distance cosinus ; 0.6 ≈ similarité 0.4
+# Visages lus sur l'original réduit à cette taille (0 = miniature md, 1440 px). Serveur 30 Go : 3072.
+FACE_SOURCE_PX = int(os.environ.get("FACE_SOURCE_PX", "0"))
+FACE_SAME_IOU = 0.4  # une détection qui recouvre autant un visage déjà en base est ce même visage
 VLM_HOURLY_BUDGET = int(os.environ.get("VLM_HOURLY_BUDGET", "20"))  # ≈ quota quotidien gratuit / 24
 # Gemini : sous le RPM gratuit, marge pour les retries. Ollama : vide = pas de limite (le CPU borne déjà le débit).
 VLM_RATE_LIMIT = os.environ.get("VLM_RATE_LIMIT", "8/m") or None
@@ -321,17 +324,32 @@ def categorize_all():
 
 @app.task(autoretry_for=(OSError,), retry_backoff=True, max_retries=3)
 def detect_faces(media_id: str):
+    """Détecte les visages et les rattache aux personnes connues. Additif : un visage déjà en base (même endroit)
+    garde son id, sa personne, ses corrections et son historique ; on ne fait qu'affiner son embedding. Les visages
+    jamais vus sont ajoutés ; aucun n'est supprimé. Sert aussi à la re-analyse en meilleure définition."""
     import ml
 
-    with db() as conn:  # visages corrigés à la main sur cette photo : on ne refait pas la détection
-        if conn.execute("SELECT 1 FROM faces WHERE media_id = %s AND manual", (media_id,)).fetchone():
-            return
-    found = ml.detect_faces(thumb_path(media_id, "md"))
+    with db() as conn:
+        m = conn.execute("SELECT owner_id, storage_path FROM media WHERE id = %s", (media_id,)).fetchone()
+    if m is None:
+        return
+    found, scan_px = None, THUMB_SIZES["md"]
+    if FACE_SOURCE_PX and m["storage_path"]:
+        try:  # original (NAS) en meilleure définition que la miniature
+            found, scan_px = ml.detect_faces(PHOTOS_DIR / m["storage_path"], FACE_SOURCE_PX), FACE_SOURCE_PX
+        except OSError:  # format illisible par libvips, fichier absent : la miniature fera l'affaire
+            pass
+    if found is None:
+        found = ml.detect_faces(thumb_path(media_id, "md"))
     with db() as conn, conn.transaction():
-        owner = conn.execute("SELECT owner_id FROM media WHERE id = %s", (media_id,)).fetchone()["owner_id"]
-        family = family_ids(conn, owner)  # une même personne est reconnue sur les photos de toute la famille
-        conn.execute("DELETE FROM faces WHERE media_id = %s", (media_id,))  # idempotent
+        family = family_ids(conn, m["owner_id"])  # une même personne est reconnue sur les photos de toute la famille
+        existing = conn.execute("SELECT id, bbox FROM faces WHERE media_id = %s FOR UPDATE", (media_id,)).fetchall()
         for bbox, score, emb in found:
+            same = max(existing, key=lambda f: iou(f["bbox"], bbox), default=None)
+            if same is not None and iou(same["bbox"], bbox) >= FACE_SAME_IOU:
+                existing.remove(same)
+                conn.execute("UPDATE faces SET embedding = %s, det_score = %s WHERE id = %s", (emb, score, same["id"]))
+                continue
             # shortcut: clustering glouton en ligne (plus proche visage connu sous le seuil) ;
             # passer à un re-clustering HDBSCAN périodique si les personnes se mélangent/fragmentent.
             near = conn.execute(
@@ -340,9 +358,20 @@ def detect_faces(media_id: str):
                 (family, emb, FACE_MAX_DIST, emb),
             ).fetchone()
             person_id = near["person_id"] if near else conn.execute(
-                "INSERT INTO people (owner_id) VALUES (%s) RETURNING id", (owner,)).fetchone()["id"]
+                "INSERT INTO people (owner_id) VALUES (%s) RETURNING id", (m["owner_id"],)).fetchone()["id"]
             conn.execute("INSERT INTO faces (media_id, owner_id, person_id, bbox, det_score, embedding) "
-                         "VALUES (%s, %s, %s, %s, %s, %s)", (media_id, owner, person_id, bbox, score, emb))
+                         "VALUES (%s, %s, %s, %s, %s, %s)", (media_id, m["owner_id"], person_id, bbox, score, emb))
+        conn.execute("UPDATE media SET faces_scan_px = %s WHERE id = %s", (scan_px, media_id))
+
+
+def iou(a, b) -> float:
+    """Recouvrement de deux boîtes normalisées x1,y1,x2,y2."""
+    w = min(a[2], b[2]) - max(a[0], b[0])
+    h = min(a[3], b[3]) - max(a[1], b[1])
+    if w <= 0 or h <= 0:
+        return 0.0
+    inter = w * h
+    return inter / ((a[2] - a[0]) * (a[3] - a[1]) + (b[2] - b[0]) * (b[3] - b[1]) - inter)
 
 
 @app.task(autoretry_for=(vlm.RetryableError,), retry_backoff=60, retry_backoff_max=3600,
@@ -619,8 +648,10 @@ def housekeeping():
         stuck = conn.execute("SELECT id FROM media WHERE status = 'quarantined' "
                              "AND created_at < now() - interval '1 hour'").fetchall()
         refresh_pet_media(conn)  # nouvelles photos de chaque animal nommé
+        search_todo = []
         if SEARCH_MODEL_ID:
             search_todo = _search_backfill(conn, CLIP_MODEL_ID, SEARCH_MODEL_ID)
+        faces_todo = _faces_backfill(conn, CLIP_MODEL_ID, len(search_todo)) if FACE_SOURCE_PX else []
     for row in expired:
         part_path(row["id"]).unlink(missing_ok=True)
     # Une seule relance toutes les 6 h par média : sinon, file engorgée, chaque passage (15 min) ajoutait des doublons
@@ -634,14 +665,17 @@ def housekeeping():
             clip_embed.delay(str(row["id"]))
             if row["kind"] == "image":
                 detect_faces.delay(str(row["id"]))
-    if SEARCH_MODEL_ID:
-        for row in search_todo:
-            if once_per(f"requeue:search:{row['id']}", 6 * 3600):
-                search_embed.delay(str(row["id"]))
+    for row in search_todo:
+        if once_per(f"requeue:search:{row['id']}", 6 * 3600):
+            search_embed.delay(str(row["id"]))
+    for row in faces_todo:
+        if once_per(f"requeue:faces:{row['id']}", 6 * 3600):
+            detect_faces.delay(str(row["id"]))
 
 
-# Rattrapage du modèle de recherche : la file ml est complétée jusqu'à ce seuil à chaque passage (15 min),
-# pour ne pas y empiler toute la bibliothèque d'un coup (les nouvelles photos passeraient derrière).
+# Rattrapages (modèle de recherche, visages en meilleure définition) : la file ml est complétée jusqu'à ce seuil
+# à chaque passage (15 min), pour ne pas y empiler toute la bibliothèque d'un coup (les nouvelles photos passeraient
+# derrière).
 SEARCH_BACKFILL_QUEUE = int(os.environ.get("SEARCH_BACKFILL_QUEUE", "500"))
 SEARCH_READY_KEY = "search:ready"  # lu par l'API : modèle de recherche dont la couverture est complète
 SEARCH_READY_MAX_MISSING = 0.01
@@ -668,6 +702,20 @@ def _search_backfill(conn, base: str, model: str) -> list:
         "WHERE m.status = 'ready' AND m.deleted_at IS NULL AND NOT EXISTS "
         "(SELECT 1 FROM search_embeddings s WHERE s.media_id = m.id AND s.model = %s) "
         "ORDER BY m.taken_at DESC LIMIT %s", (base, model, room)).fetchall()
+
+
+def _faces_backfill(conn, base: str, queued: int) -> list:
+    """Photos dont les visages ont été cherchés en moins bonne définition que FACE_SOURCE_PX (dont la Freebox), à
+    ré-analyser (additif : detect_faces ne supprime rien), dans la limite de la place dans la file ml. Seulement
+    celles déjà passées par CLIP, pour ne pas doubler la 1re analyse d'une photo qui vient d'arriver."""
+    room = SEARCH_BACKFILL_QUEUE - _redis.llen("ml") - queued  # queued : ajoutées à l'instant par _search_backfill
+    if room <= 0:
+        return []
+    return conn.execute(
+        "SELECT m.id FROM media m WHERE m.kind = 'image' AND m.status = 'ready' AND m.deleted_at IS NULL "
+        "AND coalesce(m.faces_scan_px, 0) < %s "
+        "AND EXISTS (SELECT 1 FROM embeddings e WHERE e.media_id = m.id AND e.model = %s) "
+        "ORDER BY m.taken_at DESC LIMIT %s", (FACE_SOURCE_PX, base, room)).fetchall()
 
 
 # ---------- Vidéo souvenir du mois ----------

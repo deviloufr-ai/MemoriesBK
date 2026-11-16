@@ -22,7 +22,7 @@ SEARCH_MODEL_ID = f"{SEARCH_CLIP_ARCH}/{SEARCH_CLIP_PRETRAINED}" if SEARCH_CLIP_
 SEARCH_DIMS = 1024
 
 MIN_DET_SCORE = 0.6
-MIN_FACE_PX = 40  # sur la miniature md (1440 px) : en dessous, l'embedding est peu fiable
+MIN_FACE_PX = 40  # dans l'image analysée (miniature md, ou original réduit) : en dessous, l'embedding est peu fiable
 
 
 def _clip(search: bool = False):
@@ -82,23 +82,47 @@ def _faces():
         return _load_faces()
 
 
+# Taille d'analyse du détecteur : 640 suffit sur une miniature 1440 px ; sur une image plus grande (FACE_SOURCE_PX,
+# serveur 30 Go) 1280 garde les petits visages (mesuré : plan large, 20 visages sur 29 à 640, 29 à 960 et plus).
+FACE_DET_SIZE = int(os.environ.get("FACE_DET_SIZE", "640"))
+
+
 @cache
 def _load_faces():
     from insightface.app import FaceAnalysis
 
     app = FaceAnalysis(name="buffalo_l", allowed_modules=["detection", "recognition"],
                        providers=["CPUExecutionProvider"])
-    app.prepare(ctx_id=-1, det_size=(640, 640))
+    app.prepare(ctx_id=-1, det_size=(FACE_DET_SIZE, FACE_DET_SIZE))
     return app
 
 
-def detect_faces(path) -> list[tuple[list[float], float, np.ndarray]]:
-    """Retourne [(bbox normalisée x1,y1,x2,y2, score, embedding 512 normalisé)]."""
-    import cv2
+def _read_bgr(path, max_px: int) -> np.ndarray:
+    """Image BGR 8 bits pour InsightFace. max_px : original réduit (orientation EXIF appliquée, HEIC compris)."""
+    if not max_px:
+        import cv2
 
-    img = cv2.imread(str(path))  # BGR, attendu par InsightFace
-    if img is None:
-        raise OSError(f"image illisible: {path}")
+        img = cv2.imread(str(path))
+        if img is None:
+            raise OSError(f"image illisible: {path}")
+        return img
+    import pyvips
+
+    try:
+        img = pyvips.Image.thumbnail(str(path), max_px, height=max_px, size="down")
+        if img.hasalpha():
+            img = img.flatten()
+        img = img.colourspace("srgb").cast("uchar")
+        return np.ascontiguousarray(img.numpy()[:, :, 2::-1])  # RGB -> BGR
+    except pyvips.Error as e:
+        raise OSError(f"image illisible: {path}: {e}") from e
+
+
+def detect_faces(path, max_px: int = 0) -> list[tuple[list[float], float, np.ndarray]]:
+    """Retourne [(bbox normalisée x1,y1,x2,y2, score, embedding 512 normalisé)].
+    MIN_FACE_PX s'entend dans l'image analysée : sur un original réduit à 3072 px, un visage de 40 px fait ~19 px
+    sur la miniature md, et son embedding est calculé sur de vrais pixels."""
+    img = _read_bgr(path, max_px)
     h, w = img.shape[:2]
     out = []
     for f in _faces().get(img):

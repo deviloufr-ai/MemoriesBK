@@ -17,7 +17,7 @@ MemoriesBK sauvegarde automatiquement les photos et vidéos des téléphones de 
 ### Intelligence artificielle locale
 - **Recherche en langage naturel** (« coucher de soleil à la plage »), avec le modèle multilingue CLIP (un modèle plus gros et plus précis, ViT-H-14, sur le serveur 30 Go).
 - **Descriptions et texte des photos** (panneaux, factures, documents) par un modèle de vision local (Ollama, qwen3-vl) sur le serveur 30 Go : la recherche trouve aussi les mots écrits sur les photos.
-- **Reconnaissance des visages** (InsightFace) : regroupement par personne et correction manuelle d'un visage mal attribué.
+- **Reconnaissance des visages** (InsightFace) : regroupement par personne et correction manuelle d'un visage mal attribué. Sur le serveur 30 Go, les visages sont cherchés sur la photo originale : les petits visages des photos de groupe sont reconnus.
 - **Catégories automatiques** : plage, nourriture, animaux, documents…
 - **Nettoyage assisté** : photos floues, trop sombres, rafales en double, captures d'écran, ou suppression par description.
 - **Retouche** automatique sur le serveur, ou par Gemini si l'utilisateur l'active.

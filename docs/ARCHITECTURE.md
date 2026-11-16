@@ -112,6 +112,12 @@ Sur le serveur 30 Go (`deploy/docker-compose.big.yml`, copié en `docker-compose
   rappel@1 image : fr 0,606 → 0,685, ja 0,638 → 0,726. ~1 s par photo sur 4 threads. `housekeeping` rattrape la
   bibliothèque (file `ml` complétée jusqu'à `SEARCH_BACKFILL_QUEUE`) et publie `search:ready` dans Redis quand
   99 % des médias ont leur vecteur : l'API bascule alors ; les photos encore sans vecteur passent par le modèle de base ;
+- visages cherchés sur l'original (`FACE_SOURCE_PX=4096`, détecteur `FACE_DET_SIZE=1280`) au lieu de la miniature
+  md : sur la photo Solvay 1927 (29 visages), 29 visages gardés au lieu de 11 en groupe, 29 au lieu de 0 vu de loin
+  (le filtre `MIN_FACE_PX=40` éliminait les visages de 30-38 px de la miniature). `detect_faces` est additif : un
+  visage déjà en base (recouvrement ≥ 0,4) garde id, personne, correction et historique, seul son embedding est
+  affiné ; aucun visage n'est supprimé. `media.faces_scan_px` dit en quelle définition la photo a été analysée ;
+  `housekeeping` reprend celles en dessous du réglage (dont les photos arrivées pendant que la Freebox servait) ;
 - `worker-vlm` (`-n vlm@photos -Q vlm -c 1`) : descriptions par Ollama et vidéos souvenirs, sans bloquer imports et recherche ;
 - `ollama` (qwen3-vl:4b-instruct, téléchargé tout seul à la 1re description). Mesuré sur 4 vCPU Xeon 2,1 GHz :
   ~60 s par photo (≈ 37 s pour lire l'image en 1024 px, ≈ 24 s pour écrire la réponse). `OLLAMA_IMAGE_SIZE=768` : ~25 % plus rapide,

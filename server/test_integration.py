@@ -278,3 +278,47 @@ def test_search_backfill_marks_ready(fam, search_media):
                   (ids[2], _unit(1024, 12)))
         assert tasks._search_backfill(c, api.CLIP_MODEL_ID, "test/big") == []
         assert api._redis.get(tasks.SEARCH_READY_KEY) == b"test/big"
+
+
+def test_detect_faces_is_additive(fam, monkeypatch):
+    """Ré-analyse en meilleure définition : visage déjà en base = même id, même personne, correction gardée ;
+    visage non retrouvé gardé ; nouveaux visages rattachés au plus proche ou à une nouvelle personne."""
+    import tasks
+
+    a, kid = fam["u"]["a"], fam["person"]
+    with api.pool.connection() as c:
+        mid = c.execute("INSERT INTO media (owner_id, sha256, kind, mime_type, original_name, size_bytes, status, "
+                        "taken_at, storage_path) VALUES (%s, %s, 'image', 'image/jpeg', 'x.jpg', 1, 'ready', %s, "
+                        "'2023/x.jpg') RETURNING id", (a, os.urandom(32), _dt(2023))).fetchone()["id"]
+        other = c.execute("INSERT INTO people (owner_id) VALUES (%s) RETURNING id", (a,)).fetchone()["id"]
+        manual = c.execute("INSERT INTO faces (media_id, owner_id, person_id, bbox, det_score, embedding, manual) "
+                           "VALUES (%s, %s, %s, '{0.1,0.1,0.2,0.2}', 0.7, %s, true) RETURNING id",
+                           (mid, a, other, _unit(512, 50))).fetchone()["id"]
+        missed = c.execute("INSERT INTO faces (media_id, owner_id, person_id, bbox, det_score, embedding) "
+                           "VALUES (%s, %s, %s, '{0.6,0.6,0.7,0.7}', 0.7, %s) RETURNING id",
+                           (mid, a, other, _unit(512, 51))).fetchone()["id"]
+        kid_emb = np.asarray(c.execute("SELECT embedding FROM faces WHERE media_id = %s",
+                                       (fam["m"]["face_old"],)).fetchone()["embedding"], dtype=np.float32)
+    sharper = _unit(512, 52)
+    found = [([0.11, 0.1, 0.21, 0.2], 0.9, sharper),                    # le visage corrigé, mieux défini
+             ([0.4, 0.4, 0.45, 0.45], 0.8, kid_emb / np.linalg.norm(kid_emb)),  # petit visage, c'est Testkid
+             ([0.8, 0.1, 0.85, 0.15], 0.8, _unit(512, 53))]              # inconnu
+    seen = {}
+    monkeypatch.setattr(tasks, "FACE_SOURCE_PX", 4096)
+    monkeypatch.setattr("ml.detect_faces", lambda path, max_px=0: seen.update(path=str(path), px=max_px) or found)
+    tasks.detect_faces(str(mid))
+    assert seen == {"path": str(tasks.PHOTOS_DIR / "2023/x.jpg"), "px": 4096}
+    with api.pool.connection() as c:
+        faces = {r["id"]: r for r in c.execute("SELECT id, person_id, manual, embedding FROM faces WHERE media_id = %s",
+                                                (mid,)).fetchall()}
+        scan = c.execute("SELECT faces_scan_px FROM media WHERE id = %s", (mid,)).fetchone()["faces_scan_px"]
+        c.execute("DELETE FROM media WHERE id = %s", (mid,))
+        c.execute("DELETE FROM people WHERE id = %s OR (owner_id = %s AND id NOT IN (SELECT person_id FROM faces "
+                  "WHERE person_id IS NOT NULL) AND name IS NULL)", (other, a))
+    assert len(faces) == 4 and scan == 4096
+    assert faces[manual]["manual"] and faces[manual]["person_id"] == other
+    assert np.allclose(np.asarray(faces[manual]["embedding"]), sharper, atol=1e-5)
+    assert faces[missed]["person_id"] == other            # non retrouvé : gardé tel quel
+    new = [f for i, f in faces.items() if i not in (manual, missed)]
+    assert sorted(f["person_id"] == kid for f in new) == [False, True]
+    assert all(f["person_id"] not in (None, other) for f in new)

@@ -18,6 +18,11 @@ services:
       # bibliothèque rattrapée (housekeeping, 15 min) ; avant, et sur la Freebox, recherche avec le modèle de base.
       SEARCH_CLIP_ARCH: xlm-roberta-large-ViT-H-14
       SEARCH_CLIP_PRETRAINED: frozen_laion5b_s13b_b90k
+      # Visages cherchés sur l'original (jusqu'à 4096 px) au lieu de la miniature 1440 px, détecteur en 1280.
+      # Mesuré (Solvay 1927, 29 visages) : groupe 11 -> 29 ; même groupe vu de loin 0 -> 29 ; ~1,2 Go, même durée.
+      # Les photos analysées avant (ou sur la Freebox) sont reprises en arrière-plan, sans rien supprimer.
+      FACE_SOURCE_PX: "4096"
+      FACE_DET_SIZE: "1280"
       # Descriptions + texte des photos par Ollama, en local, sur toute la bibliothèque. Sur la Freebox, .env reste
       # maître (off ou gemini) : les tâches Ollama rendues avec la file Redis y sont ignorées (tasks.describe).
       VLM_PROVIDER: ollama
