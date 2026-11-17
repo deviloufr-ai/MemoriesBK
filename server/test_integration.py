@@ -345,7 +345,7 @@ def test_remove_member_keeps_photos():
         a, b, other = user("a", admin=True), user("b"), user("c")
         same = os.urandom(32)
         a_copy, b_dup, b_own = media(a, same), media(b, same), media(b, os.urandom(32))
-        album = c.execute("INSERT INTO albums (owner_id, name) VALUES (%s, 'Vacances') RETURNING id", (b,)).fetchone()["id"]
+        album = c.execute("INSERT INTO albums (owner_id, title) VALUES (%s, 'Vacances') RETURNING id", (b,)).fetchone()["id"]
         c.execute("INSERT INTO album_media (album_id, media_id) VALUES (%s, %s), (%s, %s)", (album, b_dup, album, b_own))
     try:
         with pytest.raises(HTTPException) as e:
