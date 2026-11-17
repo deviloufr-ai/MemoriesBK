@@ -100,6 +100,7 @@ fun MemberDialog(
     member: Member?,
     roles: List<String>,
     onDismiss: () -> Unit,
+    onRemove: (() -> Unit)? = null,
     onSave: (name: String, role: String, email: String, password: String) -> Unit,
 ) {
     var name by remember { mutableStateOf(member?.displayName ?: "") }
@@ -125,6 +126,9 @@ fun MemberDialog(
                     OutlinedTextField(password, { password = it }, label = { Text(stringResource(R.string.member_password_label)) },
                         singleLine = true, visualTransformation = PasswordVisualTransformation(),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password))
+                }
+                if (onRemove != null) TextButton(onClick = onRemove) {
+                    Text(stringResource(R.string.remove_member), color = MaterialTheme.colorScheme.error)
                 }
             }
         },

@@ -343,6 +343,7 @@ fun ManageTab(vm: GalleryViewModel, onCleanup: () -> Unit, onTrash: () -> Unit, 
     var adding by remember { mutableStateOf(false) }
     var sharing by remember { mutableStateOf<Member?>(null) }
     var confirmLogout by remember { mutableStateOf(false) }
+    var removing by remember { mutableStateOf<Member?>(null) }
     val context = LocalContext.current
     LaunchedEffect(Unit) { vm.loadFamily(); vm.checkServer() }
     Scaffold(contentWindowInsets = WindowInsets(0), topBar = { TopAppBar(title = { Text(stringResource(R.string.tab_manage)) }) }) { padding ->
@@ -475,8 +476,24 @@ fun ManageTab(vm: GalleryViewModel, onCleanup: () -> Unit, onTrash: () -> Unit, 
         vm.addMember(email, password, name, role)
     }
     sharing?.let { SharingSheet(it, vm, onDismiss = { sharing = null }) }
+    removing?.let { m ->
+        val name = m.displayName ?: m.email
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { removing = null },
+            title = { Text(stringResource(R.string.remove_member_confirm_title, name)) },
+            text = { Text(stringResource(R.string.remove_member_confirm_text, name)) },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = { removing = null; vm.removeMember(m.id, name) }) {
+                    Text(stringResource(R.string.remove_member), color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = { androidx.compose.material3.TextButton(onClick = { removing = null }) { Text(stringResource(R.string.cancel)) } },
+        )
+    }
+    val isAdmin = family?.members?.any { it.me && it.isAdmin } == true
     editing?.let { m ->
-        MemberDialog(m, roles, onDismiss = { editing = null }) { name, role, _, _ ->
+        MemberDialog(m, roles, onDismiss = { editing = null },
+            onRemove = if (isAdmin && !m.me) {{ editing = null; removing = m }} else null) { name, role, _, _ ->
             editing = null
             vm.updateMember(m.id, name, role)
         }

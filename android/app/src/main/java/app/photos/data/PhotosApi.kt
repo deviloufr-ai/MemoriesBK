@@ -195,6 +195,9 @@ interface PhotosApi {
 
     @PATCH("api/v1/family/members/{id}")
     suspend fun patchMember(@Path("id") memberId: String, @Body body: MemberPatch): Response<Unit>
+
+    @DELETE("api/v1/family/members/{id}")
+    suspend fun removeMember(@Path("id") memberId: String): Response<Unit>
 }
 
 @Serializable data class Social(val liked: Boolean, val likes: List<String>, val comments: List<Comment>)

@@ -173,6 +173,10 @@
     <string name="family_help">Chaque membre se connecte avec son propre compte et voit la même bibliothèque.</string>
     <string name="member_me">%1$s (toi)</string>
     <string name="add_member">Ajouter un membre</string>
+    <string name="remove_member">Retirer de la famille</string>
+    <string name="remove_member_confirm_title">Retirer %1$s ?</string>
+    <string name="remove_member_confirm_text">Le compte de %1$s sera supprimé et ne permettra plus de se connecter. Ses photos, albums et personnes restent dans la famille. Ses likes et commentaires seront effacés.</string>
+    <string name="member_removed">%1$s a été retiré(e) de la famille</string>
     <string name="edit_member">Modifier %1$s</string>
     <string name="first_name">Prénom</string>
     <string name="member_login_label">Identifiant (prénom, pseudo ou e-mail)</string>

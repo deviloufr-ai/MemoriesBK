@@ -328,3 +328,45 @@ def test_detect_faces_is_additive(fam, monkeypatch):
     new = [f for i, f in faces.items() if i not in (manual, missed)]
     assert sorted(f["person_id"] == kid for f in new) == [False, True]
     assert all(f["person_id"] not in (None, other) for f in new)
+
+
+def test_remove_member_keeps_photos():
+    """Membre supprimé : son compte part, ses photos/personnes/albums restent dans la famille (chez l'admin)."""
+    tag, fid = uuid.uuid4().hex[:8], uuid.uuid4()
+    with api.pool.connection() as c:
+        def user(name, admin=False):
+            return c.execute("INSERT INTO users (email, password_hash, family_id, is_admin) VALUES (%s, 'x', %s, %s) "
+                             "RETURNING id", (f"pytest-{tag}-{name}@test.local", fid, admin)).fetchone()["id"]
+
+        def media(owner, sha):
+            return c.execute("INSERT INTO media (owner_id, sha256, kind, mime_type, original_name, size_bytes, status) "
+                             "VALUES (%s, %s, 'image', 'image/jpeg', 'x.jpg', 1, 'ready') RETURNING id", (owner, sha)).fetchone()["id"]
+
+        a, b, other = user("a", admin=True), user("b"), user("c")
+        same = os.urandom(32)
+        a_copy, b_dup, b_own = media(a, same), media(b, same), media(b, os.urandom(32))
+        album = c.execute("INSERT INTO albums (owner_id, name) VALUES (%s, 'Vacances') RETURNING id", (b,)).fetchone()["id"]
+        c.execute("INSERT INTO album_media (album_id, media_id) VALUES (%s, %s), (%s, %s)", (album, b_dup, album, b_own))
+    try:
+        with pytest.raises(HTTPException) as e:
+            api.remove_member(other, api.current_family(b))  # pas administrateur
+        assert e.value.status_code == 403
+        with pytest.raises(HTTPException) as e:
+            api.remove_member(a, api.current_family(a))  # pas soi-même
+        assert e.value.status_code == 404
+
+        r = api.remove_member(b, api.current_family(a))
+        assert (r["moved"], r["duplicates"]) == (1, 1)
+        with api.pool.connection() as c:
+            assert c.execute("SELECT 1 FROM users WHERE id = %s", (b,)).fetchone() is None
+            assert c.execute("SELECT owner_id FROM media WHERE id = %s", (b_own,)).fetchone()["owner_id"] == a
+            assert c.execute("SELECT 1 FROM media WHERE id = %s", (b_dup,)).fetchone() is None
+            assert c.execute("SELECT owner_id FROM albums WHERE id = %s", (album,)).fetchone()["owner_id"] == a
+            assert {x["media_id"] for x in c.execute("SELECT media_id FROM album_media WHERE album_id = %s",
+                                                      (album,)).fetchall()} == {a_copy, b_own}
+        with pytest.raises(HTTPException) as e:
+            api.current_family(b)  # son jeton ne sert plus à rien
+        assert e.value.status_code == 401
+    finally:
+        with api.pool.connection() as c:
+            c.execute("DELETE FROM users WHERE email LIKE %s", (f"pytest-{tag}-%",))

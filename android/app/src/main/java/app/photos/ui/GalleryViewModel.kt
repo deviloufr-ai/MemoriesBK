@@ -354,6 +354,15 @@ class GalleryViewModel @Inject constructor(
         loadFamily()
     }
 
+    /** Admin : supprime le compte du membre ; ses photos restent dans la famille (transférées à l'admin). */
+    fun removeMember(id: String, name: String) = viewModelScope.launch {
+        val r = call { api.removeMember(id) } ?: return@launch
+        error.value = if (r.isSuccessful) context.getString(R.string.member_removed, name)
+            else context.getString(R.string.error_server, r.code())
+        loadFamily()
+        if (r.isSuccessful) refresh()
+    }
+
     /** Retouche : nouvelle copie créée par le serveur, l'original reste intact. */
     fun enhance(item: GridItem, mode: String, onDone: (GridItem) -> Unit) = viewModelScope.launch {
         val id = item.remoteId ?: run { error.value = context.getString(R.string.error_not_backed_up); return@launch }

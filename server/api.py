@@ -201,6 +201,31 @@ def patch_member(member_id: UUID, body: MemberPatch, fam: Fam):
     return {"id": str(member_id)}
 
 
+@app.delete("/api/v1/family/members/{member_id}")
+def remove_member(member_id: UUID, fam: Fam):
+    """Supprime le compte d'un membre (administrateur seulement). Rien ne disparaît de la bibliothèque :
+    ses photos, visages, personnes, albums et animaux passent à l'administrateur. Ses likes et commentaires partent."""
+    _member(fam, member_id)
+    p = {"a": fam.uid, "m": member_id}
+    with pool.connection() as c, c.transaction():
+        # Même fichier déjà chez l'administrateur (UNIQUE owner_id, sha256) : ses albums pointent vers cette copie,
+        # puis le doublon est supprimé. shortcut: son fichier reste sur le disque.
+        c.execute("INSERT INTO album_media (album_id, media_id) SELECT am.album_id, k.id FROM album_media am "
+                  "JOIN media d ON d.id = am.media_id JOIN media k ON k.owner_id = %(a)s AND k.sha256 = d.sha256 "
+                  "WHERE d.owner_id = %(m)s ON CONFLICT DO NOTHING", p)
+        dups = c.execute("DELETE FROM media d USING media k WHERE d.owner_id = %(m)s AND k.owner_id = %(a)s "
+                         "AND k.sha256 = d.sha256", p).rowcount
+        moved = c.execute("UPDATE media SET owner_id = %(a)s WHERE owner_id = %(m)s", p).rowcount
+        for table in ("faces", "people", "albums", "pets"):
+            c.execute(f"UPDATE {table} SET owner_id = %(a)s WHERE owner_id = %(m)s", p)
+        c.execute("UPDATE family_shared SET shared_by = %(a)s WHERE shared_by = %(m)s", p)
+        c.execute("UPDATE family_share_people SET added_by = %(a)s WHERE added_by = %(m)s", p)
+        c.execute("UPDATE family_share_pets SET added_by = %(a)s WHERE added_by = %(m)s", p)
+        # Le reste (envois en cours, imports, règles de partage, vidéos souvenirs, likes, commentaires) : ON DELETE CASCADE
+        c.execute("DELETE FROM users WHERE id = %(m)s", p)
+    return {"id": str(member_id), "moved": moved, "duplicates": dups}
+
+
 class ShareRule(BaseModel):
     date_from: date | None = None
     date_to: date | None = None

@@ -164,6 +164,10 @@
     <string name="family_help">メンバーはそれぞれ自分のアカウントでログインし、同じライブラリを見られます。</string>
     <string name="member_me">%1$s（自分）</string>
     <string name="add_member">メンバーを追加</string>
+    <string name="remove_member">家族から削除</string>
+    <string name="remove_member_confirm_title">%1$s さんを削除しますか？</string>
+    <string name="remove_member_confirm_text">%1$s さんのアカウントは削除され、ログインできなくなります。写真・アルバム・人物は家族に残ります。いいねとコメントは削除されます。</string>
+    <string name="member_removed">%1$s さんを家族から削除しました</string>
     <string name="edit_member">%1$s を編集</string>
     <string name="first_name">名前</string>
     <string name="member_login_label">ログイン ID（名前、ニックネーム、メールアドレス）</string>
