@@ -30,10 +30,32 @@ IMPORT_EXCLUDE = set(filter(None, os.environ.get("IMPORT_EXCLUDE", "photos-app,t
 DSN = os.environ.get("DATABASE_URL", "postgresql://photos:photos@postgres/photos")
 
 THUMB_SIZES = {"sm": 320, "md": 1440}
-FACE_MAX_DIST = float(os.environ.get("FACE_MAX_DIST", "0.6"))  # distance cosinus ; 0.6 ≈ similarité 0.4
 # Visages lus sur l'original réduit à cette taille (0 = miniature md, 1440 px). Serveur 30 Go : 3072.
 FACE_SOURCE_PX = int(os.environ.get("FACE_SOURCE_PX", "0"))
 FACE_SAME_IOU = 0.4  # une détection qui recouvre autant un visage déjà en base est ce même visage
+# Rattachement d'un visage : on compare aux FACE_TOP_M visages les plus proches de CHAQUE personne (et pas au
+# seul voisin le plus proche, qui enchaînait les personnes de proche en proche, ni à un vote, qui favorise la
+# personne la plus photographiée). Mesuré le 17/11/2026 sur 387 visages rejetés à la main : 58 % remis chez la
+# mauvaise personne par l'ancien rattachement, 3 % avec celui-ci.
+FACE_VOTE_K = 50       # voisins consultés
+FACE_TOP_M = 5
+FACE_ASSIGN_SIM = 0.45  # ressemblance moyenne minimale à ces visages
+FACE_MARGIN = 0.03      # avance minimale sur la 2e personne, sinon nouvelle personne
+
+
+def pick_person(neighbors) -> object | None:
+    """[(personne, similarité)] des plus proches visages → la personne dont les FACE_TOP_M plus proches
+    ressemblent le plus en moyenne, ou None si sous FACE_ASSIGN_SIM ou à moins de FACE_MARGIN de la 2e."""
+    by = {}
+    for p, sim in neighbors:
+        by.setdefault(p, []).append(float(sim))
+    scores = sorted(((sum(s := sorted(v, reverse=True)[:FACE_TOP_M]) / len(s), p) for p, v in by.items()),
+                    key=lambda x: -x[0])
+    if not scores or scores[0][0] < FACE_ASSIGN_SIM:
+        return None
+    if len(scores) > 1 and scores[0][0] - scores[1][0] < FACE_MARGIN:
+        return None
+    return scores[0][1]
 VLM_HOURLY_BUDGET = int(os.environ.get("VLM_HOURLY_BUDGET", "20"))  # ≈ quota quotidien gratuit / 24
 # Gemini : sous le RPM gratuit, marge pour les retries. Ollama : vide = pas de limite (le CPU borne déjà le débit).
 VLM_RATE_LIMIT = os.environ.get("VLM_RATE_LIMIT", "8/m") or None
@@ -350,14 +372,13 @@ def detect_faces(media_id: str):
                 existing.remove(same)
                 conn.execute("UPDATE faces SET embedding = %s, det_score = %s WHERE id = %s", (emb, score, same["id"]))
                 continue
-            # shortcut: clustering glouton en ligne (plus proche visage connu sous le seuil) ;
-            # passer à un re-clustering HDBSCAN périodique si les personnes se mélangent/fragmentent.
+            # Voir pick_person ; pour réparer l'existant : regroup_faces.py.
             near = conn.execute(
-                "SELECT person_id FROM faces WHERE owner_id = ANY(%s) AND person_id IS NOT NULL "
-                "AND embedding <=> %s < %s ORDER BY embedding <=> %s LIMIT 1",
-                (family, emb, FACE_MAX_DIST, emb),
-            ).fetchone()
-            person_id = near["person_id"] if near else conn.execute(
+                "SELECT person_id, 1 - (embedding <=> %s) AS sim FROM faces WHERE owner_id = ANY(%s) "
+                "AND person_id IS NOT NULL ORDER BY embedding <=> %s LIMIT %s",
+                (emb, family, emb, FACE_VOTE_K),
+            ).fetchall()
+            person_id = pick_person([(r["person_id"], r["sim"]) for r in near]) or conn.execute(
                 "INSERT INTO people (owner_id) VALUES (%s) RETURNING id", (m["owner_id"],)).fetchone()["id"]
             conn.execute("INSERT INTO faces (media_id, owner_id, person_id, bbox, det_score, embedding) "
                          "VALUES (%s, %s, %s, %s, %s, %s)", (media_id, m["owner_id"], person_id, bbox, score, emb))

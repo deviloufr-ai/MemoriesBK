@@ -29,7 +29,7 @@ services:
       OLLAMA_MODEL: qwen3-vl:4b-instruct   # 3,3 Go ; qwen3-vl:8b-instruct (6 Go) : meilleur, ~2x plus lent
       OLLAMA_NUM_THREAD: "4"            # les 4 cœurs physiques ; CLIP et visages gardent de la marge
       VLM_RATE_LIMIT: ""                # pas de quota : le CPU est la seule limite
-      VLM_HOURLY_BUDGET: "100"          # taille de la file vlm, complétée chaque heure (≈ 1 h de calcul à ~35 s/photo)
+      VLM_HOURLY_BUDGET: "600"          # taille de la file vlm, complétée chaque heure (≈ 1 h de GPU à ~6 s/photo ; 100 sur CPU)
 
   worker:
     environment: *big
@@ -72,3 +72,11 @@ services:
       OLLAMA_NUM_PARALLEL: "1"
       OLLAMA_MAX_LOADED_MODELS: "1"
     mem_limit: 10g
+    # RTX 2080 Ti (11 Go de VRAM) : pilote NVIDIA 595-open + NVIDIA Container Toolkit installés le 16/11/2026
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
