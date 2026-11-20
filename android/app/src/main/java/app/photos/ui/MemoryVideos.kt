@@ -92,7 +92,9 @@ fun MemoryVideosRow(vm: GalleryViewModel, onOpen: (List<GridItem>, Int) -> Unit)
                         "queued", "running" -> CircularProgressIndicator(Modifier.align(Alignment.Center), color = Color.White)
                     }
                     Column(Modifier.align(Alignment.BottomStart).padding(12.dp)) {
-                        Text(v.yearMonth().format(MONTH_FMT).replaceFirstChar(Char::uppercase), color = Color.White, fontWeight = FontWeight.SemiBold)
+                        Text(v.personName?.let { stringResource(R.string.timelapse_of, it) }
+                            ?: v.yearMonth().format(MONTH_FMT).replaceFirstChar(Char::uppercase),
+                            color = Color.White, fontWeight = FontWeight.SemiBold)
                         Text(
                             when (v.status) {
                                 "ready" -> stringResource(R.string.memory_video_items, v.mediaCount)
@@ -121,11 +123,20 @@ fun MemoryVideosRow(vm: GalleryViewModel, onOpen: (List<GridItem>, Int) -> Unit)
     }
     if (creating) {
         val now = YearMonth.now()
+        val people by vm.people.collectAsState()
+        LaunchedEffect(Unit) { if (people.isEmpty()) vm.loadExplore() }
         AlertDialog(
             onDismissRequest = { creating = false },
             title = { Text(stringResource(R.string.memory_video_pick_month)) },
             text = {
                 LazyColumn(Modifier.heightIn(max = 360.dp)) {
+                    // Timelapse « grandir » des personnes nommées, avant les mois
+                    items(people.filter { it.name != null }.take(6), key = { "p" + it.id }) { p ->
+                        ListItem(
+                            headlineContent = { Text(stringResource(R.string.timelapse_of, p.name!!)) },
+                            modifier = Modifier.clickable { creating = false; vm.createTimelapse(p.id) },
+                        )
+                    }
                     items((0..23).map { now.minusMonths(it.toLong()) }) { ym ->
                         ListItem(
                             headlineContent = { Text(ym.format(MONTH_FMT).replaceFirstChar(Char::uppercase)) },

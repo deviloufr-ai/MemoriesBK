@@ -31,7 +31,8 @@ import migrate
 from metadata import media_mime, safe_join, visible_dir
 from ml import CLIP_MODEL_ID, SEARCH_MODEL_ID  # constantes seulement : importer ml ne charge aucun modèle
 from tasks import (DSN, REDIS_URL, IMPORT_EXCLUDE, IMPORT_ROOT, PHOTOS_DIR, QUARANTINE_DIR, embed_query, import_folder, ingest,
-                   part_path, thumb_path, MEMORY_VIDEO_DIR, SEARCH_READY_KEY, THUMBS_DIR, queue_memory_video)
+                   part_path, thumb_path, MEMORY_VIDEO_DIR, SEARCH_READY_KEY, THUMBS_DIR, queue_memory_video,
+                   queue_timelapse)
 from tasks import enhance as enhance_task, refresh_pet_media
 from util import decode_cursor, encode_cursor, hash_password, parse_content_range, verify_password
 
@@ -1266,7 +1267,8 @@ def delete_album(album_id: UUID, fam: Fam):
 
 
 MV_COLS = ("v.id, to_char(v.month, 'YYYY-MM') AS month, v.status, v.cover_media_id, v.duration_s, "
-           "coalesce(cardinality(v.media_ids), 0) AS media_count")
+           "coalesce(cardinality(v.media_ids), 0) AS media_count, "
+           "(SELECT p.name FROM people p WHERE p.id = v.person_id) AS person_name")
 
 
 @app.get("/api/v1/memory-videos")
@@ -1287,6 +1289,21 @@ def create_memory_video(body: MemoryVideoReq, uid: User):
     month = datetime.strptime(body.month + "-01", "%Y-%m-%d").date()
     with pool.connection() as c:
         return queue_memory_video(c, uid, month)
+
+
+class TimelapseReq(BaseModel):
+    person_id: UUID
+
+
+@app.post("/api/v1/memory-videos/timelapse", status_code=202)
+def create_timelapse(body: TimelapseReq, uid: User, fam: Fam):
+    """Timelapse « grandir » d'une personne nommée (montage en arrière-plan) ; le refaire reprend toutes les photos."""
+    with pool.connection() as c:
+        if not c.execute("SELECT 1 FROM people WHERE id = %s AND owner_id = ANY(%s) AND name IS NOT NULL",
+                         (body.person_id, fam)).fetchone():
+            raise HTTPException(404, "personne introuvable")
+        vid = queue_timelapse(c, uid, body.person_id)["id"]
+        return c.execute(f"SELECT {MV_COLS} FROM memory_videos v WHERE v.id = %s", (vid,)).fetchone()
 
 
 @app.get("/api/v1/memory-videos/{video_id}/video")

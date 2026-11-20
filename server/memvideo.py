@@ -6,6 +6,8 @@ import tempfile
 from datetime import date
 from pathlib import Path
 
+import numpy as np
+
 W, H, FPS = 1280, 720, 25
 ZOOM_SS = 3  # zoompan arrondit x/y au pixel : sur une image 3x plus grande, l'à-coup devient invisible
 CLIP_S = 3.0  # durée de chaque photo / extrait vidéo
@@ -99,13 +101,72 @@ def render(month: date, clips: list[tuple[str, Path, float]], out: Path, music: 
         total = TITLE_S + CLIP_S * (len(parts) - 1)
         silent = tmp / "silent.mp4"
         _ffmpeg(["-f", "concat", "-safe", "0", "-i", str(tmp / "list.txt"), "-c", "copy", str(silent)])
-        final = tmp / "final.mp4"
-        if music:
-            _ffmpeg(["-i", str(silent), "-stream_loop", "-1", "-i", str(music), "-map", "0:v", "-map", "1:a",
-                     "-c:v", "copy", "-c:a", "aac", "-b:a", "160k",
-                     "-af", f"afade=t=in:d=1,afade=t=out:st={max(total - 2.5, 0)}:d=2.5",
-                     "-t", f"{total:.2f}", "-movflags", "+faststart", str(final)])
-        else:
-            _ffmpeg(["-i", str(silent), "-c", "copy", "-movflags", "+faststart", str(final)])
-        final.replace(out)
+        _finish(silent, total, music, tmp / "final.mp4").replace(out)
+    return total
+
+
+def _finish(silent: Path, total: float, music: Path | None, final: Path) -> Path:
+    """Ajoute la musique (en boucle, fondu d'entrée et de sortie) ou recopie telle quelle, lecture rapide en streaming."""
+    if music:
+        _ffmpeg(["-i", str(silent), "-stream_loop", "-1", "-i", str(music), "-map", "0:v", "-map", "1:a",
+                 "-c:v", "copy", "-c:a", "aac", "-b:a", "160k",
+                 "-af", f"afade=t=in:d=1,afade=t=out:st={max(total - 2.5, 0)}:d=2.5",
+                 "-t", f"{total:.2f}", "-movflags", "+faststart", str(final)])
+    else:
+        _ffmpeg(["-i", str(silent), "-c", "copy", "-movflags", "+faststart", str(final)])
+    return final
+
+
+# ---------- Timelapse « grandir » : le meilleur visage de chaque semaine, aligné sur les yeux ----------
+TL_S, TL_FPS, TL_HOLD = 720, 6, 1.5  # carré 720 px, 6 visages par seconde en fondu, dernière image tenue 1,5 s
+TL_MAX = 480                         # ~80 s au plus : au-delà, une semaine sur deux, etc.
+TL_MIN = 8
+# Yeux, nez, coins de la bouche du modèle ArcFace (112 px), recentrés : écart des yeux = 20 % de l'image
+_ARC = np.array([[38.2946, 51.6963], [73.5318, 51.5014], [56.0252, 71.7366], [41.5493, 92.3655], [70.7299, 92.2041]])
+TL_DST = ((_ARC - [56.0, 72.0]) * (TL_S * 0.2 / 35.24) + [TL_S / 2, TL_S * 0.46]).astype(np.float32)
+
+
+def weekly(rows: list, score) -> list[list]:
+    """Candidats groupés par semaine ISO de taken_at, meilleurs d'abord ; semaines dans l'ordre chronologique."""
+    by = {}
+    for r in rows:
+        by.setdefault(tuple(r["taken_at"].isocalendar()[:2]), []).append(r)
+    return [sorted(by[k], key=score, reverse=True) for k in sorted(by)]
+
+
+def align(img: np.ndarray, kps: np.ndarray):
+    """Image BGR -> carré TL_S où les 5 points tombent sur TL_DST. None si visage trop petit ou de profil."""
+    import cv2
+
+    kps = np.asarray(kps, dtype=np.float32)
+    eye = kps[1] - kps[0]
+    d2 = float(eye @ eye)
+    if d2 < 20 ** 2:  # moins de 20 px entre les yeux : flou une fois agrandi
+        return None
+    if abs(float((kps[2] - (kps[0] + kps[1]) / 2) @ eye) / d2) > 0.2:  # nez loin du milieu des yeux : de profil
+        return None
+    m, _ = cv2.estimateAffinePartial2D(kps, TL_DST, method=cv2.LMEDS)
+    return None if m is None else cv2.warpAffine(img, m, (TL_S, TL_S), flags=cv2.INTER_LINEAR)
+
+
+def caption(bgr: np.ndarray, when: date):
+    """Image PIL avec « Mars 2021 » en bas, lisible sur tout fond (contour noir)."""
+    from PIL import Image, ImageDraw, ImageFont
+
+    im = Image.fromarray(np.ascontiguousarray(bgr[:, :, ::-1]))
+    d, f = ImageDraw.Draw(im), ImageFont.truetype(FONT, 34)
+    text = title(when)
+    d.text(((TL_S - d.textlength(text, font=f)) / 2, TL_S - 64), text, font=f, fill="white",
+           stroke_width=3, stroke_fill="black")
+    return im
+
+
+def render_timelapse(frames: Path, n: int, out: Path, music: Path | None) -> float:
+    """frames/00000.jpg… -> mp4 : fondu enchaîné entre visages, dernière image tenue. Retourne la durée (s)."""
+    total = n / TL_FPS + TL_HOLD
+    silent = frames / "silent.mp4"
+    _ffmpeg(["-framerate", str(TL_FPS), "-i", str(frames / "%05d.jpg"), "-vf",
+             f"framerate=fps={FPS}:interp_start=0:interp_end=255:scene=100,"
+             f"tpad=stop_mode=clone:stop_duration={TL_HOLD},format=yuv420p", *ENC, str(silent)], timeout=1800)
+    _finish(silent, total, music, frames / "final.mp4").replace(out)
     return total

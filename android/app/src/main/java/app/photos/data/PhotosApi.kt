@@ -151,6 +151,9 @@ interface PhotosApi {
     @POST("api/v1/memory-videos")
     suspend fun createMemoryVideo(@Body body: MonthReq): MemoryVideo
 
+    @POST("api/v1/memory-videos/timelapse")
+    suspend fun createTimelapse(@Body body: TimelapseReq): MemoryVideo
+
     @GET("api/v1/memories")
     suspend fun memories(): MemoriesRes
 
@@ -398,7 +401,9 @@ data class MemoryVideo(
     @SerialName("cover_media_id") val coverMediaId: String? = null,
     @SerialName("duration_s") val durationS: Double? = null,
     @SerialName("media_count") val mediaCount: Int = 0,
+    @SerialName("person_name") val personName: String? = null, // timelapse d'une personne, sinon vidéo du mois
 )
 
 @Serializable data class MemoryVideosRes(val videos: List<MemoryVideo>)
 @Serializable data class MonthReq(val month: String)
+@Serializable data class TimelapseReq(@SerialName("person_id") val personId: String)

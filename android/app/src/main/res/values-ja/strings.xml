@@ -27,7 +27,8 @@
     <string name="memory_video_error">作成に失敗しました</string>
     <string name="memory_video_making">作成中…</string>
     <string name="memory_video_create">作成</string>
-    <string name="memory_video_pick_month">どの月のムービーを作りますか？</string>
+    <string name="memory_video_pick_month">どのムービーを作りますか？</string>
+    <string name="timelapse_of">%1$sの成長</string>
     <string name="face_open">写真を見る</string>
     <string name="face_not_this">%1$s ではない…</string>
     <string name="face_remove">この顔を削除</string>

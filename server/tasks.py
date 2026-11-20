@@ -4,6 +4,7 @@ import json
 import os
 import shutil
 import subprocess
+import tempfile
 from datetime import datetime, timezone
 from functools import cache
 from pathlib import Path
@@ -86,6 +87,7 @@ app.conf.update(
         "tasks.describe": {"queue": "vlm"},
         # file peu utilisée : une vidéo (10-20 min) ne passe pas derrière des milliers d'imports
         "tasks.make_memory_video": {"queue": "vlm"},
+        "tasks.make_timelapse": {"queue": "ml"},  # le détecteur de visages y est déjà chargé
         "tasks.monthly_memory_videos": {"queue": "vlm"},
     },
     beat_schedule={
@@ -774,11 +776,7 @@ def make_memory_video(video_id: str):
             "ORDER BY m.taken_at", {"fam": fam, "start": month}).fetchall()
 
     def done(status, **fields):
-        with db() as conn:
-            conn.execute("UPDATE memory_videos SET status = %(s)s, media_ids = %(ids)s, cover_media_id = %(cover)s, "
-                         "duration_s = %(dur)s, error = %(err)s, updated_at = now() WHERE id = %(id)s",
-                         {"s": status, "id": video_id, "ids": fields.get("ids"), "cover": fields.get("cover"),
-                          "dur": fields.get("dur"), "err": fields.get("err")})
+        _mv_done(video_id, status, **fields)
 
     photos = memvideo.spread_pick([r for r in rows if r["kind"] == "image"], memvideo.MAX_PHOTOS, memvideo.photo_score)
     videos = memvideo.spread_pick([r for r in rows if r["kind"] == "video"], memvideo.MAX_VIDEOS, lambda r: r["duration_ms"])
@@ -796,11 +794,91 @@ def make_memory_video(video_id: str):
     done("ready", ids=[r["id"] for r in chosen], cover=cover, dur=dur)
 
 
+def _mv_done(video_id, status, **fields):
+    with db() as conn:
+        conn.execute("UPDATE memory_videos SET status = %(s)s, media_ids = %(ids)s, cover_media_id = %(cover)s, "
+                     "duration_s = %(dur)s, error = %(err)s, updated_at = now() WHERE id = %(id)s",
+                     {"s": status, "id": video_id, "ids": fields.get("ids"), "cover": fields.get("cover"),
+                      "dur": fields.get("dur"), "err": fields.get("err")})
+
+
+TIMELAPSE_PX = 2048  # original réduit : assez de pixels pour un visage agrandi, sans décoder 50 Mpx
+
+
+def _timelapse_frame(r):
+    """Visage r (bbox de la base) aligné, ou None (illisible, plus retrouvé, de profil, trop petit)."""
+    import memvideo
+    import ml
+
+    try:
+        img, found = ml.face_landmarks(PHOTOS_DIR / r["storage_path"], TIMELAPSE_PX)
+    except OSError:
+        return None
+    cx, cy = (r["bbox"][0] + r["bbox"][2]) / 2, (r["bbox"][1] + r["bbox"][3]) / 2
+    kps = [k for b, k in found if b[0] <= cx <= b[2] and b[1] <= cy <= b[3]]
+    return memvideo.align(img, kps[0]) if kps else None
+
+
+@app.task
+def make_timelapse(video_id: str):
+    """Timelapse d'une personne : son meilleur visage de chaque semaine, aligné, du plus ancien au plus récent."""
+    import memvideo
+
+    with db() as conn:
+        v = conn.execute("UPDATE memory_videos SET status = 'running', error = NULL, updated_at = now() "
+                         "WHERE id = %s RETURNING person_id", (video_id,)).fetchone()
+        if v is None or v["person_id"] is None:
+            return
+        rows = conn.execute(
+            "SELECT f.bbox, f.det_score, m.id, m.storage_path, m.taken_at FROM faces f JOIN media m ON m.id = f.media_id "
+            "WHERE f.person_id = %s AND m.kind = 'image' AND m.status = 'ready' AND m.deleted_at IS NULL "
+            "AND m.hidden_at IS NULL AND m.edited_from IS NULL AND m.taken_at IS NOT NULL", (v["person_id"],)).fetchall()
+
+    def score(r):  # gros plan net d'abord
+        x1, y1, x2, y2 = r["bbox"]
+        return (x2 - x1) * (y2 - y1) * r["det_score"]
+
+    weeks = memvideo.weekly(rows, score)
+    if len(weeks) > memvideo.TL_MAX:
+        weeks = memvideo.spread_pick(weeks, memvideo.TL_MAX, lambda w: score(w[0]))
+    out = MEMORY_VIDEO_DIR / f"{video_id}.mp4"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    used = []
+    try:
+        with tempfile.TemporaryDirectory(dir=out.parent) as tmp:
+            for cands in weeks:
+                for r in cands[:3]:  # le meilleur visage de la semaine peut être de profil : 2 essais de plus
+                    frame = _timelapse_frame(r)
+                    if frame is not None:
+                        memvideo.caption(frame, r["taken_at"]).save(f"{tmp}/{len(used):05}.jpg", quality=90)
+                        used.append(r["id"])
+                        break
+            if len(used) < memvideo.TL_MIN:
+                return _mv_done(video_id, "empty", ids=used)
+            dur = memvideo.render_timelapse(Path(tmp), len(used), out, memvideo.pick_music(MUSIC_DIR))
+    except Exception as exc:
+        _mv_done(video_id, "error", err=f"{type(exc).__name__}: {exc}"[:500])
+        raise
+    _mv_done(video_id, "ready", ids=used, cover=used[-1], dur=dur)
+
+
+def queue_timelapse(conn, user_id, person_id) -> dict:
+    """Crée (ou refait, avec les photos d'aujourd'hui) le timelapse d'une personne pour la famille de user_id."""
+    from datetime import date
+
+    row = conn.execute(
+        "INSERT INTO memory_videos (owner_id, month, person_id) VALUES (%s, %s, %s) "
+        "ON CONFLICT (owner_id, person_id) WHERE person_id IS NOT NULL DO UPDATE SET status = 'queued', error = NULL, "
+        "month = EXCLUDED.month, updated_at = now() RETURNING id", (family_key(conn, user_id), date.today().replace(day=1), person_id)).fetchone()
+    make_timelapse.delay(str(row["id"]))
+    return row
+
+
 def queue_memory_video(conn, user_id, month) -> dict:
     """Crée (ou relance) la vidéo du mois pour la famille de user_id."""
     row = conn.execute(
         "INSERT INTO memory_videos (owner_id, month) VALUES (%s, %s) "
-        "ON CONFLICT (owner_id, month) DO UPDATE SET status = 'queued', error = NULL, updated_at = now() "
+        "ON CONFLICT (owner_id, month) WHERE person_id IS NULL DO UPDATE SET status = 'queued', error = NULL, updated_at = now() "
         "RETURNING id, to_char(month, 'YYYY-MM') AS month, status", (family_key(conn, user_id), month)).fetchone()
     make_memory_video.delay(str(row["id"]))
     return row
@@ -816,5 +894,5 @@ def monthly_memory_videos():
     with db() as conn:
         users = conn.execute("SELECT id FROM users WHERE email <> 'e2e@test.local'").fetchall()
         for key in {family_key(conn, u["id"]) for u in users}:
-            if not conn.execute("SELECT 1 FROM memory_videos WHERE owner_id = %s AND month = %s", (key, prev)).fetchone():
+            if not conn.execute("SELECT 1 FROM memory_videos WHERE owner_id = %s AND month = %s AND person_id IS NULL", (key, prev)).fetchone():
                 queue_memory_video(conn, key, prev)

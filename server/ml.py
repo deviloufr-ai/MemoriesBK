@@ -134,6 +134,14 @@ def detect_faces(path, max_px: int = 0) -> list[tuple[list[float], float, np.nda
     return out
 
 
+def face_landmarks(path, max_px: int = 0) -> tuple[np.ndarray, list[tuple[list[float], np.ndarray]]]:
+    """(image BGR lue, [(bbox normalisée, 5 points en px de cette image)]) : pour aligner un visage (timelapse)."""
+    img = _read_bgr(path, max_px)
+    h, w = img.shape[:2]
+    return img, [([f.bbox[0] / w, f.bbox[1] / h, f.bbox[2] / w, f.bbox[3] / h], f.kps)
+                 for f in _faces().get(img) if f.det_score >= MIN_DET_SCORE]
+
+
 # ---------- Catégories (CLIP zéro-shot, 100 % local) ----------
 # Libellé affiché -> description donnée à CLIP. Ajouter une ligne suffit pour créer une catégorie
 # (puis relancer tasks.categorize_all pour les photos existantes).

@@ -377,10 +377,15 @@ class GalleryViewModel @Inject constructor(
     fun loadMemoryVideos() = viewModelScope.launch { call { api.memoryVideos() }?.let { memoryVideos.value = it.videos } }
 
     fun createMemoryVideo(month: String) = viewModelScope.launch {
-        call { api.createMemoryVideo(app.photos.data.MonthReq(month)) }?.let { v ->
-            memoryVideos.update { list -> (listOf(v) + list.filter { it.id != v.id }).sortedByDescending { it.month } }
-        }
+        call { api.createMemoryVideo(app.photos.data.MonthReq(month)) }?.let(::addMemoryVideo)
     }
+
+    fun createTimelapse(personId: String) = viewModelScope.launch {
+        call { api.createTimelapse(app.photos.data.TimelapseReq(personId)) }?.let(::addMemoryVideo)
+    }
+
+    private fun addMemoryVideo(v: app.photos.data.MemoryVideo) =
+        memoryVideos.update { list -> (listOf(v) + list.filter { it.id != v.id }).sortedByDescending { it.month } }
 
     private fun loadMemories() = viewModelScope.launch {
         call { api.memories() }?.let { res ->

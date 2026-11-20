@@ -29,7 +29,8 @@
     <string name="memory_video_error">Échec du montage</string>
     <string name="memory_video_making">En préparation…</string>
     <string name="memory_video_create">Créer</string>
-    <string name="memory_video_pick_month">Vidéo de quel mois ?</string>
+    <string name="memory_video_pick_month">Quelle vidéo créer ?</string>
+    <string name="timelapse_of">%1$s grandit</string>
     <string name="face_open">Voir ses photos</string>
     <string name="face_not_this">Ce n\'est pas %1$s…</string>
     <string name="face_remove">Retirer ce visage</string>
