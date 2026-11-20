@@ -118,8 +118,8 @@ def _finish(silent: Path, total: float, music: Path | None, final: Path) -> Path
 
 
 # ---------- Timelapse « grandir » : le meilleur visage de chaque semaine, aligné sur les yeux ----------
-TL_S, TL_FPS, TL_HOLD = 720, 6, 1.5  # carré 720 px, 6 visages par seconde en fondu, dernière image tenue 1,5 s
-TL_MAX = 480                         # ~80 s au plus : au-delà, une semaine sur deux, etc.
+TL_S, TL_FPS, TL_HOLD = 720, 3, 2.0  # carré 720 px, 3 visages par seconde, dernière image tenue 2 s
+TL_MAX = 300                         # ~100 s au plus : au-delà, une semaine sur deux, etc.
 TL_MIN = 8
 # Yeux, nez, coins de la bouche du modèle ArcFace (112 px), recentrés : écart des yeux = 20 % de l'image
 _ARC = np.array([[38.2946, 51.6963], [73.5318, 51.5014], [56.0252, 71.7366], [41.5493, 92.3655], [70.7299, 92.2041]])
@@ -134,19 +134,57 @@ def weekly(rows: list, score) -> list[list]:
     return [sorted(by[k], key=score, reverse=True) for k in sorted(by)]
 
 
-def align(img: np.ndarray, kps: np.ndarray):
-    """Image BGR -> carré TL_S où les 5 points tombent sur TL_DST. None si visage trop petit ou de profil."""
+TL_MIN_EYES = 40     # px entre les yeux dans l'original réduit : en dessous, ce n'est pas un portrait
+TL_YAW = 0.1         # nez décalé de plus de 10 % de l'écart des yeux : tête tournée
+TL_PITCH = (0.38, 0.62)  # position du nez entre yeux et bouche (0,49 de face) : hors bornes, tête levée ou baissée
+
+
+def frontal(kps: np.ndarray) -> bool:
+    """Portrait de face, assez grand : yeux écartés, nez centré entre les yeux et à mi-chemin de la bouche."""
+    kps = np.asarray(kps, dtype=np.float32)
+    mid = (kps[0] + kps[1]) / 2
+    eye, nose, mouth = kps[1] - kps[0], kps[2] - mid, (kps[3] + kps[4]) / 2 - mid
+    d2, m2 = float(eye @ eye), float(mouth @ mouth)
+    if d2 < TL_MIN_EYES ** 2 or m2 < 1:
+        return False
+    return abs(float(nose @ eye) / d2) <= TL_YAW and TL_PITCH[0] <= float(nose @ mouth) / m2 <= TL_PITCH[1]
+
+
+# Fond uni clair (dégradé léger) derrière l'enfant détouré, BGR
+_BG = np.linspace([238, 240, 242], [206, 212, 218], TL_S, dtype=np.float32)[:, None, :].repeat(TL_S, axis=1)
+
+
+def _bust() -> np.ndarray:
+    """Ovale tête et épaules autour du visage aligné, bord fondu : ce qui touche l'enfant hors de l'ovale disparaît."""
     import cv2
 
-    kps = np.asarray(kps, dtype=np.float32)
-    eye = kps[1] - kps[0]
-    d2 = float(eye @ eye)
-    if d2 < 20 ** 2:  # moins de 20 px entre les yeux : flou une fois agrandi
+    m = np.zeros((TL_S, TL_S), np.float32)
+    cv2.ellipse(m, (TL_S // 2, int(TL_S * 0.62)), (int(TL_S * 0.40), int(TL_S * 0.60)), 0, 0, 360, 1, -1)
+    return cv2.GaussianBlur(m, (0, 0), TL_S * 0.03)
+
+
+def align(img: np.ndarray, kps: np.ndarray, mask_fn=None):
+    """Image BGR -> carré TL_S où les 5 points tombent sur TL_DST, sur fond uni si mask_fn (image -> 0..1).
+    None si ce n'est pas un portrait de face."""
+    import cv2
+
+    if not frontal(kps):
         return None
-    if abs(float((kps[2] - (kps[0] + kps[1]) / 2) @ eye) / d2) > 0.2:  # nez loin du milieu des yeux : de profil
+    m, _ = cv2.estimateAffinePartial2D(np.asarray(kps, dtype=np.float32), TL_DST, method=cv2.LMEDS)
+    if m is None:
         return None
-    m, _ = cv2.estimateAffinePartial2D(kps, TL_DST, method=cv2.LMEDS)
-    return None if m is None else cv2.warpAffine(img, m, (TL_S, TL_S), flags=cv2.INTER_LINEAR)
+    out = cv2.warpAffine(img, m, (TL_S, TL_S), flags=cv2.INTER_LINEAR)
+    if mask_fn is None:
+        return out
+    a = mask_fn(out) * cv2.warpAffine(np.ones(img.shape[:2], np.float32), m, (TL_S, TL_S))  # coins hors photo = fond
+    # seulement la silhouette qui contient le nez : pas les parents, frères et sœurs ou objets autour
+    lab = cv2.connectedComponents((a > 0.5).astype(np.uint8))[1]
+    k = lab[int(TL_DST[2][1]), int(TL_DST[2][0])]
+    if k:
+        a *= cv2.dilate((lab == k).astype(np.float32), np.ones((15, 15), np.uint8))
+    a = cv2.GaussianBlur(a, (0, 0), 1.5) * _bust()  # bord adouci : pas de liseré
+    a = a[:, :, None]
+    return (out * a + _BG * (1 - a)).astype(np.uint8)
 
 
 def caption(bgr: np.ndarray, when: date):
@@ -166,7 +204,8 @@ def render_timelapse(frames: Path, n: int, out: Path, music: Path | None) -> flo
     total = n / TL_FPS + TL_HOLD
     silent = frames / "silent.mp4"
     _ffmpeg(["-framerate", str(TL_FPS), "-i", str(frames / "%05d.jpg"), "-vf",
-             f"framerate=fps={FPS}:interp_start=0:interp_end=255:scene=100,"
+             # chaque visage reste net un instant puis se fond dans le suivant (pas de flou permanent)
+             f"framerate=fps={FPS}:interp_start=80:interp_end=176:scene=100,"
              f"tpad=stop_mode=clone:stop_duration={TL_HOLD},format=yuv420p", *ENC, str(silent)], timeout=1800)
     _finish(silent, total, music, frames / "final.mp4").replace(out)
     return total

@@ -21,7 +21,7 @@
     </plurals>
     <string name="use_local">自宅のネットワーク</string>
     <string name="use_local_text">自宅の Wi-Fi ではサーバーに直接接続（高速・制限なし）。外出先ではインターネット経由。</string>
-    <string name="memory_videos">今月のムービー</string>
+    <string name="memory_videos">思い出ムービー</string>
     <string name="memory_video_items">写真と動画 %1$d 件</string>
     <string name="memory_video_empty">写真が足りません</string>
     <string name="memory_video_error">作成に失敗しました</string>

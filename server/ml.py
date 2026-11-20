@@ -2,6 +2,7 @@
 import os
 import threading
 from functools import cache
+from pathlib import Path
 
 import numpy as np
 
@@ -132,6 +133,41 @@ def detect_faces(path, max_px: int = 0) -> list[tuple[list[float], float, np.nda
         bbox = [max(0.0, x1 / w), max(0.0, y1 / h), min(1.0, x2 / w), min(1.0, y2 / h)]
         out.append((bbox, float(f.det_score), f.normed_embedding))
     return out
+
+
+# Détourage des personnes (U²-Net human seg, ~170 Mo) : téléchargé une fois dans un dossier persistant
+SEG_URL = "https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2net_human_seg.onnx"
+SEG_PATH = Path(os.environ.get("MODELS_DIR", "/thumbs/models")) / "u2net_human_seg.onnx"
+
+
+@cache
+def _seg():
+    import httpx
+    import onnxruntime as ort
+
+    if not SEG_PATH.exists():
+        SEG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        tmp = SEG_PATH.with_suffix(".part")
+        with httpx.stream("GET", SEG_URL, follow_redirects=True, timeout=120) as r, open(tmp, "wb") as f:
+            r.raise_for_status()
+            for chunk in r.iter_bytes(1 << 20):
+                f.write(chunk)
+        tmp.replace(SEG_PATH)
+    return ort.InferenceSession(str(SEG_PATH), providers=["CPUExecutionProvider"])
+
+
+def person_mask(bgr: np.ndarray) -> np.ndarray:
+    """Masque 0..1 (float32, taille de l'image) des personnes de l'image BGR."""
+    import cv2
+
+    h, w = bgr.shape[:2]
+    x = cv2.resize(bgr, (320, 320), interpolation=cv2.INTER_AREA)[:, :, ::-1].astype(np.float32)
+    x = (x / max(float(x.max()), 1.0) - [0.485, 0.456, 0.406]) / [0.229, 0.224, 0.225]
+    with _load_lock:
+        s = _seg()
+    p = s.run(None, {s.get_inputs()[0].name: x.transpose(2, 0, 1)[None].astype(np.float32)})[0][0, 0]
+    p = (p - p.min()) / max(float(p.max() - p.min()), 1e-6)
+    return cv2.resize(p.astype(np.float32), (w, h), interpolation=cv2.INTER_LINEAR)
 
 
 def face_landmarks(path, max_px: int = 0) -> tuple[np.ndarray, list[tuple[list[float], np.ndarray]]]:

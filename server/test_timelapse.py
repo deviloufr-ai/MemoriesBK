@@ -25,4 +25,28 @@ def test_align_puts_landmarks_on_template_and_rejects_profiles():
     profile = src.copy()
     profile[2] = profile[0]  # nez au niveau d'un œil
     assert memvideo.align(img, profile) is None
-    assert memvideo.align(img, src * 0.05) is None  # yeux à moins de 20 px
+    assert memvideo.align(img, src * 0.05) is None  # visage trop petit
+    down = src.copy()
+    down[2] = (src[3] + src[4]) / 2  # nez sur la bouche : tête baissée
+    assert not memvideo.frontal(down) and memvideo.frontal(src)
+
+
+def test_align_puts_person_on_plain_background():
+    img = np.full((400, 400, 3), 90, np.uint8)
+    out = memvideo.align(img, memvideo.TL_DST * 0.5, mask_fn=lambda im: np.zeros(im.shape[:2], np.float32))
+    assert np.allclose(out[0, 0], memvideo._BG[0, 0], atol=1)  # tout est fond : rien de l'image d'origine
+
+
+def test_background_keeps_only_the_silhouette_with_the_face():
+    img = np.full((800, 800, 3), 90, np.uint8)
+    kps = memvideo.TL_DST + 40
+
+    def mask(im):  # deux silhouettes : celle du visage (centre) et une autre dans un coin
+        m = np.zeros(im.shape[:2], np.float32)
+        m[200:600, 200:520] = 1
+        m[0:80, 0:80] = 1
+        return m
+
+    out = memvideo.align(img, kps, mask_fn=mask)
+    assert (out[400, 360] == 90).all()  # l'enfant
+    assert np.allclose(out[20, 20], memvideo._BG[20, 20], atol=1)  # l'autre silhouette est devenue du fond

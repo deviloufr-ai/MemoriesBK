@@ -816,7 +816,7 @@ def _timelapse_frame(r):
         return None
     cx, cy = (r["bbox"][0] + r["bbox"][2]) / 2, (r["bbox"][1] + r["bbox"][3]) / 2
     kps = [k for b, k in found if b[0] <= cx <= b[2] and b[1] <= cy <= b[3]]
-    return memvideo.align(img, kps[0]) if kps else None
+    return memvideo.align(img, kps[0], ml.person_mask) if kps else None
 
 
 @app.task
@@ -847,7 +847,7 @@ def make_timelapse(video_id: str):
     try:
         with tempfile.TemporaryDirectory(dir=out.parent) as tmp:
             for cands in weeks:
-                for r in cands[:3]:  # le meilleur visage de la semaine peut être de profil : 2 essais de plus
+                for r in cands[:8]:  # le plus gros visage de la semaine n'est pas toujours un portrait de face
                     frame = _timelapse_frame(r)
                     if frame is not None:
                         memvideo.caption(frame, r["taken_at"]).save(f"{tmp}/{len(used):05}.jpg", quality=90)
