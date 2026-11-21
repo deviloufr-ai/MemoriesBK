@@ -370,3 +370,28 @@ def test_remove_member_keeps_photos():
     finally:
         with api.pool.connection() as c:
             c.execute("DELETE FROM users WHERE email LIKE %s", (f"pytest-{tag}-%",))
+
+
+def test_map_clusters_and_area_query(fam):
+    m, f = fam["m"], fam["f"]
+    geo = {m["manual"]: (48.8566, 2.3522), m["b_own"]: (48.8606, 2.3376)}  # Paris, ~1 km d'écart
+    with api.pool.connection() as c:
+        for mid, (lat, lon) in geo.items():
+            c.execute("UPDATE media SET latitude = %s, longitude = %s, city = 'Paris' WHERE id = %s", (lat, lon, mid))
+    try:
+        mine = lambda cl: [x for x in cl if x["cover_id"] in geo]  # noqa: E731 (la base peut contenir d'autres photos)
+        far = api.map_clusters(f["a"], 48, 2, 49, 3, zoom=8)["clusters"]
+        assert [x["count"] for x in mine(far)] == [2] and mine(far)[0]["city"] == "Paris"
+        near = api.map_clusters(f["a"], 48, 2, 49, 3, zoom=16)["clusters"]
+        assert sorted(x["count"] for x in mine(near)) == [1, 1]
+        # Le rectangle d'un groupe ramène exactement ses photos
+        g = mine(far)[0]
+        box = {k: g[k] for k in ("south", "west", "north", "east")}
+        assert {i["id"] for i in api.media_query(f["a"], **box, limit=100)["items"]} >= set(geo)
+        assert not mine(api.map_clusters(f["o"], 48, 2, 49, 3, zoom=8)["clusters"])  # autre famille : rien
+        assert api.map_extent(f["a"])["count"] >= 2
+        with pytest.raises(HTTPException):
+            api.media_query(f["a"], south=48, west=2, limit=10)  # rectangle incomplet
+    finally:
+        with api.pool.connection() as c:
+            c.execute("UPDATE media SET latitude = NULL, longitude = NULL, city = NULL WHERE id = ANY(%s)", (list(geo),))

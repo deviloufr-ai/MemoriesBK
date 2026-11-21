@@ -12,6 +12,7 @@ MemoriesBK sauvegarde automatiquement les photos et vidéos des téléphones de 
 - **Dates fiables** : une date EXIF aberrante est écartée, puis la date est retrouvée dans le nom du fichier.
 - **Chronologie fluide** : navigation par mois d'un glissement de doigt, barre de défilement rapide, zoom par pincement ou double tap.
 - **Albums, lieux** (géocodage hors ligne), **ajouts récents** et **corbeille** restaurable.
+- **Carte des photos** (Android et web) : les photos sont regroupées selon le zoom, un groupe s'ouvre en grille. Depuis une photo, son lieu ouvre la carte à l'endroit de la prise de vue. Fond OpenStreetMap : seules les tuiles viennent d'Internet, la position des photos reste sur le serveur.
 - **Libérer de l'espace** : supprime du téléphone les photos déjà sauvegardées.
 
 ### Intelligence artificielle locale

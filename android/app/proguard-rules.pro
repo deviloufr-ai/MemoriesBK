@@ -7,3 +7,5 @@
 -dontwarn org.conscrypt.**
 -dontwarn org.bouncycastle.**
 -dontwarn org.openjsse.**
+# osmdroid (carte des photos) : références optionnelles à des classes absentes
+-dontwarn org.osmdroid.**

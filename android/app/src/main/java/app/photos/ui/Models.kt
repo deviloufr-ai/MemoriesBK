@@ -71,6 +71,8 @@ sealed interface Collection {
     data class Album(val id: String, override val title: String) : Collection
     data class Category(override val title: String) : Collection
     data class Pet(val id: String, override val title: String) : Collection
+    /** Rectangle de la carte (un groupe de photos, ou toute la zone affichée). */
+    data class Area(override val title: String, val south: Double, val west: Double, val north: Double, val east: Double) : Collection
 }
 
 /** Catégories IA : le serveur renvoie le libellé français, qui reste la clé des requêtes. */

@@ -52,8 +52,25 @@ interface PhotosApi {
         @Query("city") city: String? = null,
         @Query("country_code") countryCode: String? = null,
         @Query("tag") tag: String? = null,
+        @Query("south") south: Double? = null,
+        @Query("west") west: Double? = null,
+        @Query("north") north: Double? = null,
+        @Query("east") east: Double? = null,
         @Query("limit") limit: Int? = null,
     ): SearchRes
+
+    /** Photos géolocalisées de la zone visible, regroupées par case selon le zoom. */
+    @GET("api/v1/map")
+    suspend fun map(
+        @Query("south") south: Double,
+        @Query("west") west: Double,
+        @Query("north") north: Double,
+        @Query("east") east: Double,
+        @Query("zoom") zoom: Int,
+    ): MapRes
+
+    @GET("api/v1/map/extent")
+    suspend fun mapExtent(): MapExtent
 
     @GET("api/v1/family/media")
     suspend fun familyMedia(@Query("limit") limit: Int? = null): SearchRes
@@ -332,6 +349,31 @@ data class Place(
 )
 
 @Serializable data class PlacesRes(val places: List<Place>)
+
+/** Groupe de photos sur la carte : position moyenne et rectangle exact de ses photos (pour /media/query). */
+@Serializable
+data class MapCluster(
+    val count: Int,
+    val lat: Double,
+    val lon: Double,
+    val south: Double,
+    val west: Double,
+    val north: Double,
+    val east: Double,
+    @SerialName("cover_id") val coverId: String,
+    val city: String? = null,
+)
+
+@Serializable data class MapRes(val clusters: List<MapCluster>)
+
+@Serializable
+data class MapExtent(
+    val count: Int,
+    val south: Double? = null,
+    val west: Double? = null,
+    val north: Double? = null,
+    val east: Double? = null,
+)
 
 @Serializable
 data class Album(

@@ -393,4 +393,14 @@
     <plurals name="items_unhidden">
         <item quantity="other">%d 件を再表示しました</item>
     </plurals>
+
+    <!-- 写真マップ -->
+    <string name="map">マップ</string>
+    <string name="show_on_map">マップで見る</string>
+    <string name="map_area">このエリア</string>
+    <string name="map_empty">位置情報付きの写真はまだありません。位置情報をオンにして撮った写真がここに表示されます。</string>
+    <string name="map_attribution">© OpenStreetMap contributors</string>
+    <plurals name="map_see_photos">
+        <item quantity="other">このエリアの写真 %1$d 枚を見る</item>
+    </plurals>
 </resources>

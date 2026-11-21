@@ -16,6 +16,9 @@ Schéma OpenAPI généré : `GET /openapi.json`, UI interactive sur `/docs`. Imp
 | PUT | `/app/apk?version=` | dépôt d'un APK signé (en-tête `X-Publish-Token`, cf. `APK_PUBLISH_TOKEN`) ; servi ensuite sur `/MemoriesBK.apk` |
 | GET | `/hidden` | médias masqués (hors chronologie, souvenirs et récents) |
 | GET | `/search/semantic?q=` | recherche CLIP en langage naturel |
+| GET | `/map?south=&west=&north=&east=&zoom=` | carte : photos géolocalisées de la zone, regroupées par cases de ~64 px au zoom donné (position moyenne, nombre, photo la plus récente, ville, rectangle du groupe) |
+| GET | `/map/extent` | rectangle englobant toutes les photos géolocalisées (cadrage initial de la carte) |
+| GET | `/media/query?south=&west=&north=&east=` | photos d'un rectangle de la carte (un groupe, ou la zone affichée) ; aussi `person_id`, `album_id`, `pet_id`, `city`, `tag` |
 | GET | `/media/{id}/thumb/{sm\|md}` | miniature WebP (cache immuable) |
 | GET | `/media/{id}/original` | fichier original, `Range` supporté (seek vidéo) |
 

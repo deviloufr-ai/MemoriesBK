@@ -60,6 +60,8 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer:1.5.0")
     implementation("androidx.media3:media3-ui:1.5.0")
     implementation("androidx.media3:media3-datasource-okhttp:1.5.0")
+    // Carte des photos : fond OpenStreetMap, sans clé ni services Google
+    implementation("org.osmdroid:osmdroid-android:6.1.20")
 
     implementation("androidx.work:work-runtime-ktx:2.10.0")
     implementation("androidx.hilt:hilt-work:1.2.0")
