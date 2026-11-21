@@ -34,7 +34,8 @@ from tasks import (DSN, REDIS_URL, IMPORT_EXCLUDE, IMPORT_ROOT, PHOTOS_DIR, QUAR
                    part_path, thumb_path, MEMORY_VIDEO_DIR, SEARCH_READY_KEY, THUMBS_DIR, queue_memory_video,
                    queue_timelapse)
 from tasks import enhance as enhance_task, refresh_pet_media
-from util import decode_cursor, encode_cursor, hash_password, parse_content_range, verify_password
+from util import (bbox_condition, decode_cursor, encode_cursor, hash_password, map_cell, parse_content_range,
+                  verify_password)
 
 JWT_SECRET = os.environ["JWT_SECRET"]
 TOKEN_TTL = timedelta(days=int(os.environ.get("TOKEN_TTL_DAYS", "90")))
@@ -520,11 +521,18 @@ def list_categories(fam: Fam):
     return {"categories": rows}
 
 
+Lat = Annotated[float, Query(ge=-90, le=90)]
+Lon = Annotated[float, Query(ge=-180, le=180)]
+OptLat = Annotated[float | None, Query(ge=-90, le=90)]
+OptLon = Annotated[float | None, Query(ge=-180, le=180)]
+
+
 @app.get("/api/v1/media/query")
 def media_query(fam: Fam, person_id: UUID | None = None, album_id: UUID | None = None, pet_id: UUID | None = None,
                 city: str | None = None, country_code: str | None = None, tag: str | None = None,
+                south: OptLat = None, west: OptLon = None, north: OptLat = None, east: OptLon = None,
                 limit: int = Query(10000, ge=1, le=10000)):
-    """Contenu d'une personne, d'un album ou d'un lieu."""
+    """Contenu d'une personne, d'un album, d'un lieu ou d'une zone de la carte (south/west/north/east)."""
     params: dict = {"fam": fam, "limit": limit}
     conds = []
     if person_id:
@@ -544,8 +552,14 @@ def media_query(fam: Fam, person_id: UUID | None = None, album_id: UUID | None =
         conds.append("EXISTS (SELECT 1 FROM media_tags mt JOIN tags t ON t.id = mt.tag_id "
                      "WHERE mt.media_id = m.id AND t.name = %(tag)s)")
         params["tag"] = tag
+    box = (south, west, north, east)
+    if any(v is not None for v in box):
+        if any(v is None for v in box) or south > north:
+            raise HTTPException(400, "zone incomplète : south <= north, west et east requis")
+        conds.append(bbox_condition())
+        params |= {"south": south, "west": west, "north": north, "east": east}
     if not conds:
-        raise HTTPException(400, "filtre requis : person_id, album_id, pet_id, city ou tag")
+        raise HTTPException(400, "filtre requis : person_id, album_id, pet_id, city, tag ou zone")
     # shortcut: pas de curseur (10 000 max) ; paginer comme la timeline si une collection dépasse ça.
     with pool.connection() as c:
         rows = c.execute(f"SELECT {MEDIA_COLS} FROM media m WHERE {ready(fam)} AND {' AND '.join(conds)} "
@@ -1215,6 +1229,47 @@ def list_places(fam: Fam):
             f"FROM media m WHERE {ready(fam)} AND m.city IS NOT NULL "
             "GROUP BY m.city, m.country_code ORDER BY count(*) DESC LIMIT 60", {"fam": fam}).fetchall()
     return {"places": rows}
+
+
+# Mercator normalisé (0..1, nord en haut), comme les tuiles de la carte : des cases carrées à l'écran à toute latitude
+_MERC_X = "((m.longitude + 180) / 360)"
+_MERC_Y = "((1 - ln(tan(radians(greatest(least(m.latitude, 85.05), -85.05))) " \
+          "+ 1 / cos(radians(greatest(least(m.latitude, 85.05), -85.05)))) / pi()) / 2)"
+
+
+@app.get("/api/v1/map")
+def map_clusters(fam: Fam, south: Lat = -90, west: Lon = -180, north: Lat = 90, east: Lon = 180,
+                 zoom: int = Query(2, ge=0, le=22)):
+    """Photos géolocalisées de la zone visible, regroupées par case (~64 dp à ce zoom).
+
+    Chaque groupe : position moyenne, nombre, photo la plus récente, ville la plus fréquente, et son rectangle
+    (south/west/north/east) pour ouvrir son contenu avec /media/query."""
+    if south > north:
+        raise HTTPException(400, "south > north")
+    p = {"fam": fam, "south": south, "west": west, "north": north, "east": east, "cell": map_cell(zoom)}
+    with pool.connection() as c:
+        rows = c.execute(
+            "SELECT count(*) AS count, avg(m.latitude) AS lat, avg(m.longitude) AS lon, "
+            "       min(m.latitude) AS south, min(m.longitude) AS west, max(m.latitude) AS north, max(m.longitude) AS east, "
+            "       (array_agg(m.id ORDER BY m.taken_at DESC))[1] AS cover_id, "
+            "       mode() WITHIN GROUP (ORDER BY m.city) AS city "
+            f"FROM media m WHERE {ready(fam)} AND m.latitude IS NOT NULL AND m.longitude IS NOT NULL "
+            f"AND {bbox_condition()} "
+            f"GROUP BY floor({_MERC_X} / %(cell)s), floor({_MERC_Y} / %(cell)s) "
+            "ORDER BY count(*) DESC LIMIT 500", p).fetchall()
+    return {"clusters": rows}
+
+
+@app.get("/api/v1/map/extent")
+def map_extent(fam: Fam):
+    """Rectangle englobant toutes les photos géolocalisées (cadrage initial de la carte) ; null s'il n'y en a aucune."""
+    with pool.connection() as c:
+        row = c.execute(
+            "SELECT count(*) AS count, min(m.latitude) AS south, min(m.longitude) AS west, "
+            "       max(m.latitude) AS north, max(m.longitude) AS east "
+            f"FROM media m WHERE {ready(fam)} AND m.latitude IS NOT NULL AND m.longitude IS NOT NULL",
+            {"fam": fam}).fetchone()
+    return row if row["count"] else {"count": 0, "south": None, "west": None, "north": None, "east": None}
 
 
 @app.get("/api/v1/albums")

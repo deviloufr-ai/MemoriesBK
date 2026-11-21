@@ -49,3 +49,20 @@ def parse_content_range(header: str, chunk_max: int) -> tuple[int, int, int]:
     if end - start + 1 > chunk_max:
         raise ValueError(f"bloc > {chunk_max} octets")
     return start, end, total
+
+
+MAP_CELLS_PER_TILE = 4  # tuile de 256 dp → cases de 64 dp : une vignette de groupe par case, sans chevauchement
+
+
+def map_cell(zoom: int) -> float:
+    """Côté d'une case de regroupement de la carte, en coordonnées Mercator normalisées (monde = 1 × 1)."""
+    return 1 / (MAP_CELLS_PER_TILE * 2 ** zoom)
+
+
+def bbox_condition(m: str = "m") -> str:
+    """Filtre SQL « dans le rectangle » ; paramètres %(south)s %(west)s %(north)s %(east)s.
+
+    west > east : le rectangle traverse l'antiméridien (Pacifique), la longitude est alors à l'est OU à l'ouest."""
+    return (f"{m}.latitude BETWEEN %(south)s AND %(north)s AND CASE WHEN %(west)s <= %(east)s "
+            f"THEN {m}.longitude BETWEEN %(west)s AND %(east)s "
+            f"ELSE {m}.longitude >= %(west)s OR {m}.longitude <= %(east)s END")

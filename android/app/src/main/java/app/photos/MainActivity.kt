@@ -93,6 +93,7 @@ private sealed interface Overlay {
     data object Trash : Overlay
     data object Hidden : Overlay
     data object Review : Overlay
+    data class Map(val focus: app.photos.ui.MapFocus?) : Overlay
 }
 
 @AndroidEntryPoint
@@ -193,7 +194,7 @@ class MainActivity : ComponentActivity() {
                         0 -> PhotosTab(vm, gridState, open, onSearch = { tab = 3 }, share, trash, addToAlbum, namePet, selected) { selected = it }
                         1 -> FamilyTab(vm, open)
                         2 -> MemoriesTab(vm, open)
-                        3 -> ExploreTab(vm, open, openCollection)
+                        3 -> ExploreTab(vm, open, openCollection, onMap = { overlays += Overlay.Map(null) })
                         else -> ManageTab(vm, onCleanup = { overlays += Overlay.Cleanup }, onTrash = { overlays += Overlay.Trash },
                             onHidden = { overlays += Overlay.Hidden },
                             onReview = { overlays += Overlay.Review })
@@ -211,10 +212,11 @@ class MainActivity : ComponentActivity() {
                     Overlay.Trash -> TrashScreen(vm, onBack = { overlays.remove(overlay) })
                     Overlay.Hidden -> app.photos.ui.HiddenScreen(vm, onBack = { overlays.remove(overlay) })
                     Overlay.Review -> app.photos.ui.ReviewScreen(vm, onBack = { overlays.remove(overlay) })
+                    is Overlay.Map -> app.photos.ui.MapScreen(vm, overlay.focus, open, openCollection, onBack = { overlays.remove(overlay) })
                     is Overlay.Viewer -> {
                         BackHandler { overlays.remove(overlay) }
                         ViewerScreen(overlay.items, overlay.index, vm, okHttp, share, trash, addToAlbum,
-                            onPerson = openCollection, onEnhanced = { open(listOf(it), 0) }, onClose = { overlays.remove(overlay) })
+                            onPerson = openCollection, onMap = { overlays += Overlay.Map(it) }, onEnhanced = { open(listOf(it), 0) }, onClose = { overlays.remove(overlay) })
                     }
                 }
             }

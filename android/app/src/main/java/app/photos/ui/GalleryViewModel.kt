@@ -401,8 +401,15 @@ class GalleryViewModel @Inject constructor(
             is Collection.Album -> api.query(albumId = c.id, limit = limit)
             is Collection.Category -> api.query(tag = c.title, limit = limit)
             is Collection.Pet -> api.query(petId = c.id, limit = limit)
+            is Collection.Area -> api.query(south = c.south, west = c.west, north = c.north, east = c.east, limit = limit)
         }
     }?.items?.map(::remoteItem) ?: emptyList()
+
+    /** null : serveur injoignable (la carte garde les groupes déjà affichés). */
+    suspend fun mapClusters(south: Double, west: Double, north: Double, east: Double, zoom: Int) =
+        call { api.map(south, west, north, east, zoom) }?.clusters
+
+    suspend fun mapExtent() = call { api.mapExtent() }
 
     suspend fun details(remoteId: String): MediaDetails? = call { api.details(remoteId) }
 

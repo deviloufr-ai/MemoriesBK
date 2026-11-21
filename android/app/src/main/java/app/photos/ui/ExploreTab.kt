@@ -30,6 +30,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.outlined.Map
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -66,7 +67,7 @@ private val SUGGESTIONS = listOf(
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun ExploreTab(vm: GalleryViewModel, onOpen: (List<GridItem>, Int) -> Unit, onCollection: (Collection) -> Unit) {
+fun ExploreTab(vm: GalleryViewModel, onOpen: (List<GridItem>, Int) -> Unit, onCollection: (Collection) -> Unit, onMap: () -> Unit) {
     val results by vm.searchResults.collectAsState()
     val searching by vm.searching.collectAsState()
     val people by vm.people.collectAsState()
@@ -179,25 +180,36 @@ fun ExploreTab(vm: GalleryViewModel, onOpen: (List<GridItem>, Int) -> Unit, onCo
                     }
                 }
             }
-            if (places.isNotEmpty()) {
-                item { SectionTitle(stringResource(R.string.section_places)) }
-                item {
-                    LazyRow(contentPadding = PaddingValues(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        items(places, key = { "${it.city}|${it.countryCode}" }) { place ->
-                            Box(
-                                Modifier.size(120.dp).clip(RoundedCornerShape(14.dp))
-                                    .clickable { onCollection(Collection.Place(place.city, place.countryCode)) },
-                            ) {
-                                AsyncImage(thumbUrl(place.coverId), null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
-                                Box(Modifier.fillMaxSize().background(Brush.verticalGradient(
-                                    0.5f to Color.Transparent, 1f to Color.Black.copy(alpha = 0.65f))))
-                                Text(
-                                    place.city, color = Color.White,
-                                    style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.align(Alignment.BottomStart)
-                                        .padding(8.dp),
-                                )
-                            }
+            // Toujours visible : la carte est l'entrée vers les lieux, même avant le géocodage des photos
+            item { SectionTitle(stringResource(R.string.section_places)) }
+            item {
+                LazyRow(contentPadding = PaddingValues(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    item {
+                        Box(
+                            Modifier.size(120.dp).clip(RoundedCornerShape(14.dp))
+                                .background(MaterialTheme.colorScheme.secondaryContainer).clickable(onClick = onMap),
+                        ) {
+                            Icon(Icons.Outlined.Map, null, Modifier.size(40.dp).align(Alignment.Center),
+                                tint = MaterialTheme.colorScheme.onSecondaryContainer)
+                            Text(stringResource(R.string.map), color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                style = MaterialTheme.typography.titleSmall,
+                                modifier = Modifier.align(Alignment.BottomStart).padding(8.dp))
+                        }
+                    }
+                    items(places, key = { "${it.city}|${it.countryCode}" }) { place ->
+                        Box(
+                            Modifier.size(120.dp).clip(RoundedCornerShape(14.dp))
+                                .clickable { onCollection(Collection.Place(place.city, place.countryCode)) },
+                        ) {
+                            AsyncImage(thumbUrl(place.coverId), null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                            Box(Modifier.fillMaxSize().background(Brush.verticalGradient(
+                                0.5f to Color.Transparent, 1f to Color.Black.copy(alpha = 0.65f))))
+                            Text(
+                                place.city, color = Color.White,
+                                style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.align(Alignment.BottomStart)
+                                    .padding(8.dp),
+                            )
                         }
                     }
                 }

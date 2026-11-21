@@ -1,4 +1,5 @@
-// MemoriesBK — version navigateur. Aucune dépendance : servi tel quel par l'API (server/api.py).
+// MemoriesBK — version navigateur. Servi tel quel par l'API (server/api.py) ; seule dépendance : Leaflet pour la carte,
+// copié dans vendor/ (aucun CDN) et chargé à la première ouverture de la carte.
 import { hashFile } from "./sha256.js";
 
 const $app = document.getElementById("app");
@@ -19,6 +20,15 @@ const STR = {
     search_placeholder: "Rechercher : « plage au coucher du soleil »",
     tab_photos: "Photos",
     tab_import: "Importer",
+    tab_map: "Carte",
+    map_empty: "Aucune photo géolocalisée pour l'instant. Les photos prises avec la localisation activée apparaîtront ici.",
+    map_area: "Cette zone",
+    map_see_one: "Voir la photo de cette zone",
+    map_see_other: "Voir les {n} photos de cette zone",
+    map_load_failed: "Impossible de charger la carte",
+    map_attribution: "contributeurs d'OpenStreetMap",
+    back_to_map: "← Carte",
+    show_on_map: "Voir sur la carte",
     logout: "Se déconnecter",
     confirm_logout: "Se déconnecter de MemoriesBK ?",
     login_intro: "Connecte-toi avec ton compte.",
@@ -102,6 +112,14 @@ const STR = {
     search_placeholder: "検索：「夕焼けのビーチ」",
     tab_photos: "フォト",
     tab_import: "インポート",
+    tab_map: "マップ",
+    map_empty: "位置情報付きの写真はまだありません。位置情報をオンにして撮った写真がここに表示されます。",
+    map_area: "このエリア",
+    map_see_other: "このエリアの写真 {n} 枚を見る",
+    map_load_failed: "マップを読み込めませんでした",
+    map_attribution: "OpenStreetMap contributors",
+    back_to_map: "← マップ",
+    show_on_map: "マップで見る",
     logout: "ログアウト",
     confirm_logout: "MemoriesBK からログアウトしますか？",
     login_intro: "アカウントでログインしてください。",
@@ -264,15 +282,17 @@ function toast(msg) {
 // ---------- Rendu et navigation ----------
 
 const route = () => (location.hash.slice(2) || "photos").split("?")[0];
-const searchQuery = () => new URLSearchParams(location.hash.split("?")[1] || "").get("q") || "";
+const hashParams = () => new URLSearchParams(location.hash.split("?")[1] || "");
+const searchQuery = () => hashParams().get("q") || "";
 window.addEventListener("hashchange", render);
 
 function render() {
+  document.querySelectorAll(".lightbox").forEach((el) => el.close?.()); // lien « Voir sur la carte » depuis la visionneuse
   $app.replaceChildren();
   if (!token) return renderLogin();
   const page = h("div", { class: "page" });
   $app.append(topbar(), page);
-  ({ photos: renderPhotos, search: renderSearch, import: renderImport }[route()] || renderPhotos)(page);
+  ({ photos: renderPhotos, search: renderSearch, import: renderImport, map: renderMap, area: renderArea }[route()] || renderPhotos)(page);
 }
 
 function topbar() {
@@ -285,7 +305,7 @@ function topbar() {
   });
   return h("header", { class: "topbar" },
     h("span", { class: "brand" }, "MemoriesBK"),
-    h("nav", { class: "tabs" }, tab("photos", t("tab_photos")), tab("import", t("tab_import"))),
+    h("nav", { class: "tabs" }, tab("photos", t("tab_photos")), tab("map", t("tab_map")), tab("import", t("tab_import"))),
     q,
     langSwitch(),
     h("button", { class: "link", onclick: () => { if (confirm(t("confirm_logout"))) { setToken(null); render(); } } }, t("logout")));
@@ -386,6 +406,7 @@ function openViewer(items, index) {
     else if (e.key === "ArrowRight") go(1);
   };
   function close() { root.remove(); removeEventListener("keydown", onKey); }
+  root.close = close;
   function go(d) { if (items[i + d]) { i += d; draw(); } }
 
   async function draw() {
@@ -418,6 +439,13 @@ function openViewer(items, index) {
   draw();
 }
 
+/** Lieu de la photo ; avec des coordonnées, lien vers la carte des photos centrée sur l'endroit. */
+function placeLink(d) {
+  const name = d.city && [d.city, d.admin1, d.country_code].filter(Boolean).join(", ");
+  if (d.latitude == null || d.longitude == null) return name;
+  return h("a", { href: `#/map?lat=${d.latitude}&lon=${d.longitude}`, title: t("show_on_map") }, name || t("show_on_map"));
+}
+
 function infoContent(d) {
   const row = (label, value) => value && [h("div", {}, h("dt", {}, label), h("dd", {}, value))];
   const camera = [d.camera_make, d.camera_model].filter(Boolean).join(" ");
@@ -426,7 +454,7 @@ function infoContent(d) {
     h("h3", {}, cap(fullFmt.format(new Date(d.taken_at)))),
     d.description && h("p", {}, d.description),
     h("dl", {},
-      row(t("info_place"), d.city && [d.city, d.admin1, d.country_code].filter(Boolean).join(", ")),
+      row(t("info_place"), placeLink(d)),
       row(t("info_coords"), d.latitude != null && `${d.latitude.toFixed(5)}, ${d.longitude.toFixed(5)}`),
       row(t("info_camera"), camera),
       row(t("info_file"), d.original_name),
@@ -435,6 +463,111 @@ function infoContent(d) {
     d.people.length > 0 && [h("dt", {}, t("info_people")), h("div", { class: "chips" }, d.people.map((p) => h("span", { class: "chip" }, p.name || t("unnamed"))))],
     d.tags.length > 0 && [h("dt", {}, t("info_tags")), h("div", { class: "chips" }, d.tags.map((tag) => h("span", { class: "chip" }, tagLabel(tag))))],
   ].flat().filter(Boolean);
+}
+
+// ---------- Carte ----------
+
+let leafletReady = null;
+function loadLeaflet() {
+  return leafletReady ??= new Promise((resolve, reject) => {
+    document.head.append(h("link", { rel: "stylesheet", href: "vendor/leaflet/leaflet.css" }));
+    document.head.append(h("script", {
+      src: "vendor/leaflet/leaflet.js",
+      onload: () => resolve(window.L),
+      onerror: () => { leafletReady = null; reject(new Error(t("map_load_failed"))); },
+    }));
+  });
+}
+
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+const areaQuery = (a) => `south=${a.south}&west=${a.west}&north=${a.north}&east=${a.east}`;
+
+/** Carte des photos : groupes calculés par le serveur selon le zoom (cases de 64 px), fond OpenStreetMap. */
+async function renderMap(page) {
+  page.classList.add("page-map");
+  const box = h("div", { class: "map" });
+  const seeAll = h("button", { class: "btn primary map-see", hidden: true });
+  const note = h("p", { class: "map-note", hidden: true }, t("map_empty"));
+  page.append(h("div", { class: "map-wrap" }, box, seeAll, note));
+  const fit = () => { box.style.height = `${Math.max(320, innerHeight - box.getBoundingClientRect().top)}px`; };
+  fit();
+  let L;
+  try { L = await loadLeaflet(); } catch (e) { toast(e.message); return; }
+  if (!box.isConnected) return; // page quittée pendant le chargement
+
+  const map = L.map(box, { minZoom: 2, maxZoom: 19, maxBounds: [[-90, -180], [90, 180]], maxBoundsViscosity: 1 });
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19, noWrap: true,
+    attribution: `&copy; <a href="https://www.openstreetmap.org/copyright">${t("map_attribution")}</a>`,
+  }).addTo(map);
+  const onResize = () => { if (!box.isConnected) return removeEventListener("resize", onResize); fit(); map.invalidateSize(); };
+  addEventListener("resize", onResize);
+
+  const layer = L.layerGroup().addTo(map);
+  let seq = 0, view = null;
+  async function refresh() {
+    const b = map.getBounds();
+    view = { south: clamp(b.getSouth(), -90, 90), west: clamp(b.getWest(), -180, 180),
+      north: clamp(b.getNorth(), -90, 90), east: clamp(b.getEast(), -180, 180) };
+    const mine = ++seq;
+    try {
+      const { clusters } = await api("GET", `/api/v1/map?${areaQuery(view)}&zoom=${Math.floor(map.getZoom())}`);
+      if (mine !== seq) return; // une réponse plus récente arrive
+      layer.clearLayers();
+      let total = 0;
+      for (const c of clusters) {
+        total += c.count;
+        const icon = h("div", { class: "map-thumb" },
+          h("img", { src: `/api/v1/media/${c.cover_id}/thumb/sm`, alt: "" }),
+          c.count > 1 && h("span", {}, c.count > 999 ? "999+" : c.count));
+        L.marker([c.lat, c.lon], { icon: L.divIcon({ html: icon, className: "", iconSize: [56, 56] }), title: c.city || "" })
+          .on("click", () => openArea(c.city || t("map_area"), c)).addTo(layer);
+      }
+      seeAll.hidden = !total;
+      seeAll.textContent = t("map_see", { n: total });
+    } catch (e) { if (mine === seq) toast(e.message); }
+  }
+  map.on("moveend", refresh);
+  seeAll.addEventListener("click", () => view && openArea(t("map_area"), view));
+
+  const p = hashParams(), lat = parseFloat(p.get("lat")), lon = parseFloat(p.get("lon"));
+  if (Number.isFinite(lat) && Number.isFinite(lon)) {
+    map.setView([lat, lon], 15);
+    // Repère du lieu de la photo, au-dessus des vignettes
+    L.marker([lat, lon], { icon: L.divIcon({ className: "map-focus", iconSize: [16, 16] }), interactive: false, zIndexOffset: 10000 }).addTo(map);
+    return;
+  }
+  try {
+    const ext = await api("GET", "/api/v1/map/extent");
+    if (!ext.count) { note.hidden = false; map.setView([20, 0], 2); return; }
+    map.fitBounds([[ext.south, ext.west], [ext.north, ext.east]], { padding: [40, 40], maxZoom: 15 });
+  } catch (e) { toast(e.message); map.setView([20, 0], 2); }
+}
+
+/** Groupe ou zone de la carte : une seule photo s'ouvre directement, sinon sa grille. */
+async function openArea(title, a) {
+  if (a.count === 1) {
+    try {
+      const { items } = await api("GET", `/api/v1/media/query?${areaQuery(a)}&limit=1`);
+      if (items.length) openViewer(items, 0);
+    } catch (e) { toast(e.message); }
+    return;
+  }
+  location.hash = `#/area?${areaQuery(a)}&title=${encodeURIComponent(title)}`;
+}
+
+async function renderArea(page) {
+  const p = hashParams();
+  const a = Object.fromEntries(["south", "west", "north", "east"].map((k) => [k, parseFloat(p.get(k))]));
+  const status = h("p", { class: "muted" }, t("loading"));
+  page.append(h("a", { href: "#/map" }, t("back_to_map")), h("h2", { class: "section" }, p.get("title") || t("map_area")), status);
+  if (!Object.values(a).every(Number.isFinite)) { status.textContent = t("no_results"); return; }
+  try {
+    const { items } = await api("GET", `/api/v1/media/query?${areaQuery(a)}`);
+    if (!items.length) { status.textContent = t("no_results"); return; }
+    status.remove();
+    page.append(h("div", { class: "grid" }, items.map((it, i) => thumb(it, () => openViewer(items, i)))));
+  } catch (e) { status.textContent = e.message; }
 }
 
 // ---------- Import ----------

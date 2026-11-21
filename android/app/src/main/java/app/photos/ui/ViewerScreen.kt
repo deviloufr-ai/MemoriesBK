@@ -44,6 +44,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.Map
 import androidx.compose.material.icons.outlined.Place
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.TextSnippet
@@ -113,6 +114,7 @@ fun ViewerScreen(
     trash: (List<GridItem>) -> Unit,
     addToAlbum: (List<GridItem>) -> Unit,
     onPerson: (Collection) -> Unit,
+    onMap: (MapFocus) -> Unit,
     onEnhanced: (GridItem) -> Unit,
     onClose: () -> Unit,
 ) {
@@ -170,6 +172,10 @@ fun ViewerScreen(
                     ).joinToString(" · ")
                     if (meta.isNotEmpty()) Text(meta, color = ViewerMuted, maxLines = 1,
                         style = MaterialTheme.typography.labelSmall.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace))
+                }
+                val lat = details?.latitude; val lon = details?.longitude
+                if (lat != null && lon != null) IconButton(onClick = { onMap(MapFocus(lat, lon)) }) {
+                    Icon(Icons.Outlined.Map, stringResource(R.string.show_on_map), tint = Color.White)
                 }
                 IconButton(onClick = { info = current }) { Icon(Icons.Outlined.Info, stringResource(R.string.info), tint = Color.White) }
             }
@@ -246,7 +252,8 @@ fun ViewerScreen(
             },
         )
     }
-    info?.let { InfoSheet(it, vm, onDismiss = { info = null }, onPerson = { c -> info = null; onPerson(c) }) }
+    info?.let { InfoSheet(it, vm, onDismiss = { info = null }, onPerson = { c -> info = null; onPerson(c) },
+        onMap = { f -> info = null; onMap(f) }) }
 }
 
 @Composable
@@ -326,7 +333,8 @@ private fun ZoomableImage(item: GridItem, onTap: () -> Unit) {
 
 @kotlin.OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-private fun InfoSheet(item: GridItem, vm: GalleryViewModel, onDismiss: () -> Unit, onPerson: (Collection) -> Unit) {
+private fun InfoSheet(item: GridItem, vm: GalleryViewModel, onDismiss: () -> Unit, onPerson: (Collection) -> Unit,
+                      onMap: (MapFocus) -> Unit) {
     var version by remember { mutableStateOf(0) } // +1 après une correction de visage : recharge les infos
     var face by remember { mutableStateOf<app.photos.data.PersonRef?>(null) }
     val details by produceState(initialValue = null as app.photos.data.MediaDetails?, item.remoteId, version) {
@@ -355,9 +363,16 @@ private fun InfoSheet(item: GridItem, vm: GalleryViewModel, onDismiss: () -> Uni
                     })
                 }
             }
-            d.city?.let { city ->
-                InfoRow(Icons.Outlined.Place, listOfNotNull(city, d.admin1, d.countryCode).joinToString(", "),
-                    d.latitude?.let { "%.5f, %.5f".format(Locale.ROOT, it, d.longitude) })
+            val lat = d.latitude; val lon = d.longitude
+            if (d.city != null || (lat != null && lon != null)) {
+                // Toucher le lieu : la carte des photos, centrée sur l'endroit de la prise de vue
+                InfoRow(
+                    Icons.Outlined.Place,
+                    listOfNotNull(d.city, d.admin1, d.countryCode).joinToString(", ").ifEmpty { stringResource(R.string.show_on_map) },
+                    if (lat != null && lon != null) "%.5f, %.5f".format(Locale.ROOT, lat, lon) else null,
+                    onClick = if (lat != null && lon != null) ({ onMap(MapFocus(lat, lon)) }) else null,
+                    trailing = if (lat != null && lon != null) Icons.Outlined.Map else null,
+                )
             }
             d.uploadedBy?.let { InfoRow(Icons.Outlined.Person, stringResource(R.string.uploaded_by, it), null) }
             val camera = listOfNotNull(d.cameraMake, d.cameraModel).distinct().joinToString(" ")
@@ -379,13 +394,17 @@ private fun InfoSheet(item: GridItem, vm: GalleryViewModel, onDismiss: () -> Uni
 }
 
 @Composable
-private fun InfoRow(icon: ImageVector, title: String, subtitle: String?) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
+private fun InfoRow(icon: ImageVector, title: String, subtitle: String?, onClick: (() -> Unit)? = null, trailing: ImageVector? = null) {
+    Row(
+        (if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier).fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         Icon(icon, null, Modifier.size(24.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-        Column(Modifier.padding(start = 16.dp)) {
+        Column(Modifier.padding(start = 16.dp).weight(1f)) {
             Text(title, style = MaterialTheme.typography.bodyLarge)
             subtitle?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         }
+        trailing?.let { Icon(it, null, Modifier.size(24.dp), tint = MaterialTheme.colorScheme.primary) }
     }
 }
 
